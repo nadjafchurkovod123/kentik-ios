@@ -1,17 +1,65 @@
 import UIKit
 
-/// Цвета Kentik — те же, что в десктопной версии: тёмный фиолетовый интерфейс,
-/// акцент var(--vio).
+/// Цвета Kentik — те же, что в десктопной версии (--frame, --bar, --tab, --field, --vio):
+/// тёмно-серые поверхности и фиолетовый акцент. Инкогнито — фиолетовый оттенок интерфейса.
 enum Theme {
-    static let background = UIColor(hex: 0x0F0A17)
-    static let bar = UIColor(hex: 0x1E0B36)
-    static let barIncognito = UIColor(hex: 0x2A1150)
-    static let field = UIColor(hex: 0x170828)
+    // Обычный режим.
+    /// Фон страницы и окна (--frame).
+    static let background = UIColor(hex: 0x1C1B22)
+    /// Панели (--bar).
+    static let bar = UIColor(hex: 0x2B2A33)
+    /// Поле ввода на панели.
+    static let field = UIColor(hex: 0x1C1B22)
+    /// Карточки, плитки (--tab).
+    static let surface = UIColor(hex: 0x42414D)
+    /// Разделители (--line).
+    static let line = UIColor(hex: 0x393842)
+
+    // Инкогнито.
+    static let incognitoBackground = UIColor(hex: 0x1A0F2E)
+    static let barIncognito = UIColor(hex: 0x2E1754)
+    static let fieldIncognito = UIColor(hex: 0x1C0B36)
+    static let surfaceIncognito = UIColor(hex: 0x4B2A85)
+    static let lineIncognito = UIColor(hex: 0x4A2D63)
+
     /// Фиолетовый акцент (--vio / --link).
     static let violet = UIColor(hex: 0xA78BFA)
+    /// Кольцо выделения (--ring).
+    static let ring = UIColor(hex: 0x8B7CF6)
     static let accent = UIColor(hex: 0xC08CF0)
     static let text = UIColor(hex: 0xFBFBFE)
     static let dim = UIColor(hex: 0xBFBFC9)
+    static let faint = UIColor(hex: 0x8F8F9D)
+    static let ok = UIColor(hex: 0x54D98C)
+    static let warn = UIColor(hex: 0xFFD567)
+    static let bad = UIColor(hex: 0xFF7A8A)
+
+    /// Длительности анимаций: короткие и дешёвые (только transform/alpha/цвет).
+    static let fast: TimeInterval = 0.12
+    static let mid: TimeInterval = 0.2
+    static let slow: TimeInterval = 0.3
+}
+
+/// Набор цветов панелей для режима (обычный / инкогнито).
+struct ChromePalette {
+    let background: UIColor
+    let bar: UIColor
+    let field: UIColor
+    let surface: UIColor
+    let line: UIColor
+
+    static let normal = ChromePalette(
+        background: Theme.background, bar: Theme.bar, field: Theme.field,
+        surface: Theme.surface, line: Theme.line
+    )
+    static let incognito = ChromePalette(
+        background: Theme.incognitoBackground, bar: Theme.barIncognito, field: Theme.fieldIncognito,
+        surface: Theme.surfaceIncognito, line: Theme.lineIncognito
+    )
+
+    static func forIncognito(_ incognito: Bool) -> ChromePalette {
+        incognito ? .incognito : .normal
+    }
 }
 
 extension UIColor {
@@ -23,4 +71,27 @@ extension UIColor {
             alpha: alpha
         )
     }
+
+    /// Светлый ли цвет (для выбора стиля строки состояния над цветом темы сайта).
+    var isLight: Bool {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard getRed(&r, green: &g, blue: &b, alpha: &a) else { return false }
+        return (0.299 * r + 0.587 * g + 0.114 * b) > 0.6
+    }
+}
+
+/// Отложенный вызов на главном потоке.
+@MainActor
+func runAfter(_ seconds: Double, _ work: @escaping @MainActor () -> Void) {
+    Task { @MainActor in
+        try? await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
+        work()
+    }
+}
+
+/// Хост для показа: без «www.» и в нижнем регистре.
+func displayHost(_ host: String?) -> String {
+    guard let host, !host.isEmpty else { return "" }
+    let lower = host.lowercased()
+    return lower.hasPrefix("www.") ? String(lower.dropFirst(4)) : lower
 }
