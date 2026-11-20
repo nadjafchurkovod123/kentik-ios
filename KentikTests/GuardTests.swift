@@ -127,6 +127,17 @@ final class PopupGuardTests: XCTestCase {
         XCTAssertEqual(decision, .allowNewTab(background: false))
     }
 
+    func testHijackedLinkCannotOpenOtherSite() {
+        // Касались ссылки на серию, а скрипт в момент клика подменил href на рекламу.
+        let decision = guardUnderTest.evaluate(request("https://fresh-ad.example/landing"),
+                                               state: tapped(link: "https://serial.example/ep2"), now: now)
+        XCTAssertTrue(isBlocked(decision))
+        // Ссылка на тот же сайт (другая страница) — можно.
+        XCTAssertEqual(guardUnderTest.evaluate(request("https://serial.example/ep3"),
+                                               state: tapped(link: "https://www.serial.example/ep2"), now: now),
+                       .allowNewTab(background: false))
+    }
+
     func testOAuthPopupIsAllowedFromIframe() {
         let decision = guardUnderTest.evaluate(request("https://accounts.google.com/o/oauth2/auth", link: false, main: false),
                                                state: tapped(link: nil), now: now)
@@ -165,9 +176,74 @@ final class RedirectGuardTests: XCTestCase {
     }
 
     private func nav(_ url: String, type: WKNavigationType = .other, main: Bool = true,
-                     from page: URL? = nil) -> RedirectGuard.Request {
+                     from page: URL? = nil, redirect: Bool = false) -> RedirectGuard.Request {
         RedirectGuard.Request(url: URL(string: url), type: type, targetsMainFrame: true,
-                              fromMainFrame: main, pageURL: page ?? self.page)
+                              fromMainFrame: main, pageURL: page ?? self.page, isRedirect: redirect)
+    }
+
+    private func linkTap(_ link: String, secondsAgo: TimeInterval = 0.4, on pageHost: String = "serial.example") -> TabGuardState {
+        var state = TabGuardState()
+        state.lastTapAt = now.addingTimeInterval(-secondsAgo)
+        state.lastLinkTapAt = state.lastTapAt
+        state.lastLinkURL = URL(string: link)
+        state.lastLinkTapPageHost = pageHost
+        return state
+    }
+
+    func testScriptRedirectToUnlistedSiteIsCancelled() {
+        // Рекламные домены меняются каждый день: без касания ссылки на другой сайт не уводим.
+        var state = TabGuardState()
+        XCTAssertTrue(isCancel(guardUnderTest.evaluate(nav("https://fresh-ad.xyz/r"), state: &state, now: now)))
+        // Касание плеера (не ссылки) — тоже.
+        state.lastTapAt = now.addingTimeInterval(-0.3)
+        XCTAssertTrue(isCancel(guardUnderTest.evaluate(nav("https://fresh-ad.xyz/r"), state: &state, now: now)))
+        // Форма на другой сайт после касания кнопки — тоже; вход через OAuth — можно.
+        XCTAssertTrue(isCancel(guardUnderTest.evaluate(nav("https://fresh-ad.xyz/f", type: .formSubmitted), state: &state, now: now)))
+        XCTAssertEqual(guardUnderTest.evaluate(nav("https://accounts.google.com/o/oauth2", type: .formSubmitted), state: &state, now: now), .allow)
+    }
+
+    func testHijackedLinkToUnlistedSiteIsCancelled() {
+        var state = linkTap("https://serial.example/episode/2")
+        XCTAssertTrue(isCancel(guardUnderTest.evaluate(nav("https://fresh-ad.xyz/landing", type: .linkActivated),
+                                                       state: &state, now: now)))
+        // Сама ссылка на другой сайт — можно.
+        var other = linkTap("https://news.example/story")
+        XCTAssertEqual(guardUnderTest.evaluate(nav("https://news.example/story", type: .linkActivated), state: &other, now: now), .allow)
+    }
+
+    func testServerRedirectToUnlistedSiteIsAllowed() {
+        // Зеркало сайта или сокращатель ссылки отвечает 301/302 — это не скрипт страницы.
+        var state = TabGuardState()
+        XCTAssertEqual(guardUnderTest.evaluate(nav("https://mirror.example/", redirect: true), state: &state, now: now), .allow)
+        XCTAssertTrue(isCancel(guardUnderTest.evaluate(nav("https://go.popads.net/r", redirect: true), state: &state, now: now)),
+                      "серверное перенаправление на рекламный хост — отменяется")
+    }
+
+    func testOutboundLinkInterstitialMayForward() {
+        // Касание ссылки на сокращатель (другой сайт) → его страница скриптом ведёт дальше.
+        var state = linkTap("https://short.example/abc", secondsAgo: 1.5)
+        state.lastCommitAt = now.addingTimeInterval(-0.5)
+        let short = URL(string: "https://short.example/abc")!
+        XCTAssertEqual(guardUnderTest.evaluate(nav("https://dest.example/article", from: short), state: &state, now: now), .allow)
+        // Но не на рекламный хост.
+        XCTAssertTrue(isCancel(guardUnderTest.evaluate(nav("https://go.popads.net/r", from: short), state: &state, now: now)))
+    }
+
+    func testAwayPageOfSameSiteForwardsOnlyToNamedDestination() {
+        // Внутренняя ссылка «/away?to=…» сайта: дальше можно только туда, куда она указывает.
+        var state = linkTap("https://serial.example/away?to=https%3A%2F%2Fdest.example%2Fx", secondsAgo: 1)
+        state.lastCommitAt = now.addingTimeInterval(-0.4)
+        let away = URL(string: "https://serial.example/away?to=https%3A%2F%2Fdest.example%2Fx")!
+        XCTAssertEqual(guardUnderTest.evaluate(nav("https://dest.example/x", from: away), state: &state, now: now), .allow)
+        XCTAssertTrue(isCancel(guardUnderTest.evaluate(nav("https://fresh-ad.xyz/", from: away), state: &state, now: now)))
+    }
+
+    func testEpisodePageOpenedByTapCannotRedirectOnLoad() {
+        // Касание внутренней ссылки на серию, страница серии при загрузке уводит на рекламу.
+        var state = linkTap("https://serial.example/episode/2", secondsAgo: 1)
+        state.lastCommitAt = now.addingTimeInterval(-0.5)
+        let episode = URL(string: "https://serial.example/episode/2")!
+        XCTAssertTrue(isCancel(guardUnderTest.evaluate(nav("https://fresh-ad.xyz/", from: episode), state: &state, now: now)))
     }
 
     private func isCancel(_ verdict: RedirectGuard.Verdict) -> Bool {
@@ -235,7 +311,8 @@ final class RedirectGuardTests: XCTestCase {
         var from = page
         for i in 0..<6 {
             let url = "https://hop\(i).example/x"
-            verdicts.append(guardUnderTest.evaluate(nav(url, from: from), state: &state, now: now.addingTimeInterval(Double(i))))
+            verdicts.append(guardUnderTest.evaluate(nav(url, from: from, redirect: true), state: &state,
+                                                    now: now.addingTimeInterval(Double(i))))
             from = URL(string: url)!
         }
         XCTAssertEqual(Array(verdicts.prefix(4)), Array(repeating: .allow, count: 4))
@@ -246,19 +323,20 @@ final class RedirectGuardTests: XCTestCase {
         var state = TabGuardState()
         let a = URL(string: "https://click.example/continue")!
         let b = URL(string: "https://serial.example/episode/1")!
-        // b → a → b → a → b: третий автоматический заход на тот же адрес отменяется.
-        XCTAssertEqual(guardUnderTest.evaluate(nav(a.absoluteString, from: b), state: &state, now: now), .allow)
-        XCTAssertEqual(guardUnderTest.evaluate(nav(b.absoluteString, from: a), state: &state, now: now.addingTimeInterval(1)), .allow)
-        XCTAssertEqual(guardUnderTest.evaluate(nav(a.absoluteString + "?t=2", from: b), state: &state, now: now.addingTimeInterval(2)), .allow)
-        XCTAssertTrue(isCancel(guardUnderTest.evaluate(nav(b.absoluteString, from: a), state: &state, now: now.addingTimeInterval(3)))
-                      || isCancel(guardUnderTest.evaluate(nav(a.absoluteString, from: b), state: &state, now: now.addingTimeInterval(4))))
+        // b → a → b → a → b (серверные перенаправления): третий заход на тот же адрес отменяется.
+        XCTAssertEqual(guardUnderTest.evaluate(nav(a.absoluteString, from: b, redirect: true), state: &state, now: now), .allow)
+        XCTAssertEqual(guardUnderTest.evaluate(nav(b.absoluteString, from: a, redirect: true), state: &state, now: now.addingTimeInterval(1)), .allow)
+        XCTAssertEqual(guardUnderTest.evaluate(nav(a.absoluteString + "?t=2", from: b, redirect: true), state: &state, now: now.addingTimeInterval(2)), .allow)
+        XCTAssertTrue(isCancel(guardUnderTest.evaluate(nav(b.absoluteString, from: a, redirect: true), state: &state, now: now.addingTimeInterval(3)))
+                      || isCancel(guardUnderTest.evaluate(nav(a.absoluteString, from: b, redirect: true), state: &state, now: now.addingTimeInterval(4))))
     }
 
     func testUserActionResetsChain() {
         var state = TabGuardState()
         for i in 0..<4 {
-            _ = guardUnderTest.evaluate(nav("https://hop\(i).example/"), state: &state, now: now)
+            _ = guardUnderTest.evaluate(nav("https://hop\(i).example/", redirect: true), state: &state, now: now)
         }
+        XCTAssertFalse(state.autoNavigations.isEmpty)
         XCTAssertEqual(guardUnderTest.evaluate(nav("https://serial.example/", type: .backForward), state: &state, now: now), .allow)
         XCTAssertTrue(state.autoNavigations.isEmpty)
     }
@@ -369,6 +447,27 @@ final class GuardInstallerTests: XCTestCase {
         ) as? Bool
         XCTAssertEqual(untouched, true, "на сайте-исключении скриплет ничего не трогает")
         tab.tearDown()
+    }
+
+    /// В списке исключений — регистрируемые домены: выключение на kentik.test выключает
+    /// скриплет и на m.kentik.test.
+    func testScriptletIsOffOnSubdomainOfDisabledSite() async throws {
+        GuardInstaller.settingsProvider = { _ in Scriptlets.Config(enabled: true, disabledHosts: ["kentik.test"]) }
+        let tab = Tab(isIncognito: true)
+        try await load(tab, host: "m.kentik.test")
+        let untouched = try await tab.webView.evaluateJavaScript(
+            "Object.getOwnPropertyDescriptor(window, 'aclib') === undefined"
+        ) as? Bool
+        XCTAssertEqual(untouched, true, "на поддомене сайта-исключения скриплет ничего не трогает")
+        tab.tearDown()
+
+        let other = Tab(isIncognito: true)
+        try await load(other, host: "notkentik.test")
+        let trapped = try await other.webView.evaluateJavaScript(
+            "Object.getOwnPropertyDescriptor(window, 'aclib') !== undefined"
+        ) as? Bool
+        XCTAssertEqual(trapped, true, "на другом сайте скриплет работает")
+        other.tearDown()
     }
 
     // MARK: - Вспомогательное

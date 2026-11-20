@@ -1,15 +1,22 @@
 import WebKit
 
 /// Защита от рекламных перенаправлений (касание плеера уводит вкладку на рекламу,
-/// setTimeout → location.href, iframe плеера меняет top.location, бесконечные цепочки
-/// «нажмите, чтобы продолжить»).
+/// setTimeout → location.href, подмена ссылки в момент клика, iframe плеера меняет
+/// top.location, бесконечные цепочки «нажмите, чтобы продолжить»).
 ///
-/// Отменяются только переходы главного фрейма, которые начал не пользователь:
-///  * на другой сайт из списка рекламных/вредоносных хостов (AdHosts);
-///  * из iframe на другой сайт (iframe плеера меняет адрес всей вкладки);
-///  * пятый и дальше автоматический переход на другой сайт за 10 секунд (цепочка);
-///  * автоматический возврат на адрес, где вкладка уже дважды была за 15 секунд (петля).
-/// Входы через OAuth (Google, Apple, VK, Яндекс, Telegram и т. п.) не трогаются.
+/// Касание ссылки разрешает переход только на её собственный сайт. Переход главного фрейма
+/// на ДРУГОЙ сайт отменяется (и показывается плашка «Открыть» — ошибка стоит одно касание),
+/// если его начал не пользователь:
+///  * скрипт или форма страницы (location.href, setTimeout, касание плеера не по ссылке) —
+///    рекламные сети меняют домены каждый день, поэтому список хостов тут не нужен;
+///  * скрипт подменил адрес ссылки, которой коснулись (переход не на её сайт);
+///  * переход из iframe;
+///  * серверное перенаправление на хост из списка рекламных (AdHosts), пятое и дальше
+///    перенаправление за 10 секунд (цепочка) или возврат туда, где вкладка уже дважды была
+///    за 15 секунд (петля).
+/// Пропускаются: адреса, открытые самим приложением (адресная строка, «Открыть»), серверные
+/// перенаправления (зеркала сайтов, сокращатели ссылок), переходы сразу после ссылки на
+/// другой сайт (страница «переход по внешней ссылке») и входы через OAuth.
 /// Если вернуть `.cancel`, Browser увеличит счётчик blockedRedirects вкладки.
 @MainActor
 final class RedirectGuard {
@@ -18,6 +25,8 @@ final class RedirectGuard {
 
     /// Сколько секунд после касания ссылки переход считается начатым пользователем.
     static let linkTapWindow: TimeInterval = 3
+    /// Сколько секунд после касания ссылки живёт цепочка «ссылка → страница-переходник → сайт».
+    static let linkChainWindow: TimeInterval = 10
     /// Сколько секунд живёт адрес, открытый самим приложением.
     static let appIntentWindow: TimeInterval = 15
     static let chainWindow: TimeInterval = 10
@@ -35,6 +44,8 @@ final class RedirectGuard {
         var pageURL: URL?
         /// Вкладка инкогнито (у неё свои временные выключатели сайтов).
         var incognito = false
+        /// Серверное перенаправление (HTTP 3xx) уже идущей загрузки, а не новый переход.
+        var isRedirect = false
     }
 
     enum Verdict: Equatable {
@@ -49,23 +60,25 @@ final class RedirectGuard {
 
     func decide(navigationAction: WKNavigationAction, tab: Tab) -> WKNavigationActionPolicy {
         let target = GuardFrames.targetFrame(of: navigationAction)
+        var state = GuardState.shared.state(for: tab)
         let request = Request(
             url: navigationAction.request.url,
             type: navigationAction.navigationType,
             targetsMainFrame: target?.isMainFrame ?? false,
             fromMainFrame: GuardFrames.sourceFrame(of: navigationAction)?.isMainFrame ?? true,
             pageURL: tab.webView.url,
-            incognito: tab.isIncognito
+            incognito: tab.isIncognito,
+            isRedirect: GuardFrames.isRedirect(navigationAction) ?? state.provisionalInProgress
         )
         guard request.targetsMainFrame else { return .allow }
 
-        var state = GuardState.shared.state(for: tab)
         // Новая вкладка (target=_blank) наследует недавнее касание ссылки у открывателя.
         if state.lastLinkTapAt == nil, let opener = tab.opener {
             let openerState = GuardState.shared.state(for: opener)
             state.lastTapAt = openerState.lastTapAt
             state.lastLinkTapAt = openerState.lastLinkTapAt
             state.lastLinkURL = openerState.lastLinkURL
+            state.lastLinkTapPageHost = openerState.lastLinkTapPageHost
         }
         let verdict = evaluate(request, state: &state, now: Date())
         GuardState.shared.update(tab) { $0 = state }
@@ -75,7 +88,8 @@ final class RedirectGuard {
             return .allow
         case .cancel(let reason):
             NSLog("[Kentik] переход заблокирован (%@): %@", reason, request.url?.absoluteString ?? "")
-            BlockedNoticeBar.show(.redirect, url: request.url, on: tab)
+            let kind: BlockedNoticeBar.Kind = adHosts.contains(host: request.url?.host) ? .redirect : .siteRedirect
+            BlockedNoticeBar.show(kind, url: request.url, on: tab)
             return .cancel
         }
     }
@@ -102,13 +116,23 @@ final class RedirectGuard {
             break
         }
 
-        if isUserInitiated(request, url: url, state: state, now: now) {
+        // Адрес открыло приложение (адресная строка, плитка, «Открыть» в плашке).
+        if let intentURL = state.appIntentURL, let at = state.appIntentAt,
+           now.timeIntervalSince(at) <= Self.appIntentWindow,
+           Domain.clean(intentURL.host ?? "") == Domain.clean(host ?? "") {
             state.autoNavigations.removeAll()
             return .allow
         }
 
-        let crossSite = Domain.isCrossSite(pageHost, host)
-        guard crossSite else { return .allow }
+        // Касание ссылки разрешает переход только на её собственный сайт (адрес ссылки
+        // запоминается в момент касания, до того как скрипт успеет его подменить).
+        if let link = state.recentLinkURL(now, within: Self.linkTapWindow),
+           let linkSite = Domain.registrable(link.host), linkSite == Domain.registrable(host) {
+            state.autoNavigations.removeAll()
+            return .allow
+        }
+
+        guard Domain.isCrossSite(pageHost, host) else { return .allow }
 
         if adHosts.contains(host: host) {
             return .cancel(reason: "реклама \(host ?? "")")
@@ -116,8 +140,37 @@ final class RedirectGuard {
         if !request.fromMainFrame {
             return .cancel(reason: "iframe уводит вкладку на \(host ?? "")")
         }
+        if request.isRedirect || followsTappedLink(request, url: url, state: state, now: now) {
+            return checkChain(url, state: &state, now: now)
+        }
+        // Скрипт или форма страницы уводит вкладку на другой сайт (касание плеера, таймер,
+        // подменённая ссылка): отменяем; плашка «Открыть» вернёт переход одним касанием.
+        if state.recentLinkURL(now, within: Self.linkTapWindow) != nil {
+            return .cancel(reason: "ссылку подменили: переход не на её сайт")
+        }
+        if state.tappedRecently(now, within: Self.linkTapWindow) {
+            return .cancel(reason: "переход на другой сайт после касания не по ссылке")
+        }
+        return .cancel(reason: "переход на другой сайт без касания")
+    }
 
-        // Цепочки и петли автоматических переходов.
+    /// Переход продолжает цепочку от касания ссылки: страница, куда увела ссылка на другой
+    /// сайт, сразу переправляет дальше (сокращатель ссылок, «переход по внешней ссылке»), или
+    /// ссылка / страница-переходник сами содержат адрес назначения (…/away?to=https://…).
+    /// Внутренняя ссылка сайта такого права не даёт: иначе страница серии, открытая касанием,
+    /// могла бы при загрузке увести вкладку на рекламу.
+    private func followsTappedLink(_ request: Request, url: URL, state: TabGuardState, now: Date) -> Bool {
+        guard let link = state.recentLinkURL(now, within: Self.linkChainWindow),
+              let tapAt = state.lastLinkTapAt,
+              let committed = state.lastCommitAt, committed >= tapAt,
+              let pageURL = request.pageURL,
+              Domain.registrable(pageURL.host) == Domain.registrable(link.host) else { return false }
+        if Domain.isCrossSite(state.lastLinkTapPageHost, link.host) { return true }
+        return Self.mentions(link, site: url.host) || Self.mentions(pageURL, site: url.host)
+    }
+
+    /// Цепочки и петли перенаправлений.
+    private func checkChain(_ url: URL, state: inout TabGuardState, now: Date) -> Verdict {
         state.autoNavigations.removeAll { now.timeIntervalSince($0.at) > max(Self.chainWindow, Self.loopWindow) }
         let key = Self.loopKey(url)
         let recentChain = state.autoNavigations.filter { now.timeIntervalSince($0.at) <= Self.chainWindow }
@@ -132,26 +185,15 @@ final class RedirectGuard {
         return .allow
     }
 
-    /// Переход начал пользователь: коснулся ссылки (на тот же сайт, если это рекламный
-    /// хост), отправил форму после касания или открыл адрес из приложения.
-    private func isUserInitiated(_ request: Request, url: URL, state: TabGuardState, now: Date) -> Bool {
-        if let intentURL = state.appIntentURL, let at = state.appIntentAt,
-           now.timeIntervalSince(at) <= Self.appIntentWindow,
-           Domain.clean(intentURL.host ?? "") == Domain.clean(url.host ?? "") {
-            return true
+    /// Есть ли в параметрах адреса ссылка на сайт `site` (?url=https%3A%2F%2Fsite…).
+    static func mentions(_ url: URL, site: String?) -> Bool {
+        guard let target = Domain.registrable(site),
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return false }
+        return items.contains { item in
+            guard let value = item.value, let candidate = URL(string: value),
+                  let scheme = candidate.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
+            return Domain.registrable(candidate.host) == target
         }
-        if let link = state.recentLinkURL(now, within: Self.linkTapWindow) {
-            // Касание ссылки разрешает переход на её сайт. На рекламный хост — только если
-            // вела туда сама ссылка, а не скрипт, перехвативший касание.
-            if adHosts.contains(host: url.host) {
-                return Domain.registrable(link.host) == Domain.registrable(url.host)
-            }
-            return true
-        }
-        if request.type == .formSubmitted || request.type == .formResubmitted {
-            return state.tappedRecently(now, within: Self.linkTapWindow)
-        }
-        return false
     }
 
     /// Ключ адреса для поиска петель: хост + путь, без запроса.

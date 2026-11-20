@@ -9,6 +9,13 @@ struct TabGuardState {
     /// Последнее касание ссылки: когда и куда она ведёт.
     var lastLinkTapAt: Date?
     var lastLinkURL: URL?
+    /// Хост страницы, на которой коснулись ссылки (отличает ссылку на другой сайт от внутренней).
+    var lastLinkTapPageHost: String?
+    /// Когда в главном фрейме вкладки последний раз открылась (commit) новая страница.
+    var lastCommitAt: Date?
+    /// Идёт загрузка главного фрейма, ещё без commit (для распознавания серверных
+    /// перенаправлений, если WebKit не сообщает об этом сам).
+    var provisionalInProgress = false
     /// Адрес, который открыло приложение (адресная строка, «Открыть» в плашке).
     var appIntentAt: Date?
     var appIntentURL: URL?
@@ -59,12 +66,27 @@ final class GuardState {
 
     /// Пользователь коснулся страницы (link — адрес ссылки под пальцем, если была).
     func recordTap(on tab: Tab, link: URL?, at now: Date = Date()) {
+        let pageHost = tab.host
         update(tab) { state in
             state.lastTapAt = now
             if let link {
                 state.lastLinkTapAt = now
                 state.lastLinkURL = link
+                state.lastLinkTapPageHost = pageHost
             }
+        }
+    }
+
+    /// Главный фрейм начал загрузку (started) или закончил её этап (commit, ошибка, конец).
+    func recordProvisional(on tab: Tab, started: Bool) {
+        update(tab) { $0.provisionalInProgress = started }
+    }
+
+    /// В главном фрейме открылась новая страница.
+    func recordCommit(on tab: Tab, at now: Date = Date()) {
+        update(tab) { state in
+            state.lastCommitAt = now
+            state.provisionalInProgress = false
         }
     }
 

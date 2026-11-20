@@ -10,12 +10,16 @@ final class BlockedNoticeBar: UIView {
 
     enum Kind {
         case popup
+        /// Переход на хост из списка рекламных.
         case redirect
+        /// Скрипт страницы уводил вкладку на другой сайт.
+        case siteRedirect
 
         var text: String {
             switch self {
             case .popup: return "Всплывающее окно заблокировано"
             case .redirect: return "Переход на рекламу заблокирован"
+            case .siteRedirect: return "Переход на другой сайт заблокирован"
             }
         }
     }
@@ -175,7 +179,7 @@ final class BlockedNoticeBar: UIView {
             } else {
                 tab.load(url)
             }
-        case .redirect:
+        case .redirect, .siteRedirect:
             tab.load(url)
         }
     }

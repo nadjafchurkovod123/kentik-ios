@@ -110,6 +110,72 @@ final class PopupGuardUITests: XCTestCase {
         attachScreenshot(app, name: "shield-off-popup-opened")
     }
 
+    /// (7) Скрипт в момент клика подменяет адрес ссылки на рекламный сайт, которого нет
+    /// в списках: ни новой вкладки (target=_blank), ни перехода этой вкладки.
+    @MainActor
+    func testHijackedLinkDoesNotOpenAd() {
+        let app = launch("hijack.html")
+        let title = waitForTitle(app, "Kentik Hijack")
+        let tabs = app.buttons["tabsButton"]
+
+        // «Серия 2»: подмена + target=_blank + stopPropagation (защита в странице не успевает).
+        tapCenter(of: webText(app, "Серия 2", link: true))
+        waitForTitle(app, "Kentik Hijack · ep2")
+        XCTAssertTrue(app.descendants(matching: .any)["popupBlockedBar"].waitForExistence(timeout: 10),
+                      "нет плашки о заблокированном окне")
+        sleep(1)
+        XCTAssertEqual(tabs.value as? String, "1", "открылась вкладка с рекламой")
+        XCTAssertEqual(title.label, "Kentik Hijack · ep2")
+        attachScreenshot(app, name: "01-hijack-new-tab-blocked")
+
+        // «Серия 3»: защита возвращает ссылке target, но адрес подменён — переход отменяется.
+        tapCenter(of: webText(app, "Серия 3", link: true))
+        waitForTitle(app, "Kentik Hijack · ep3")
+        sleep(2)
+        XCTAssertEqual(title.label, "Kentik Hijack · ep3", "вкладку увело на рекламу")
+        XCTAssertEqual(tabs.value as? String, "1", "открылась вкладка с рекламой")
+        attachScreenshot(app, name: "02-hijack-same-tab-blocked")
+    }
+
+    /// (8) Касание плеера меняет location.href на рекламный домен, которого нет в списках:
+    /// переход отменяется; «Открыть» — явный выбор — открывает его.
+    @MainActor
+    func testPlayerTapRedirectToUnlistedSiteIsBlocked() {
+        let app = launch("player-redirect.html")
+        let title = waitForTitle(app, "Kentik Player Redirect")
+
+        tapCenter(of: webText(app, "Плеер"))
+        waitForTitle(app, "Kentik Player Redirect · нажато")
+        XCTAssertTrue(app.descendants(matching: .any)["popupBlockedBar"].waitForExistence(timeout: 10),
+                      "нет плашки о заблокированном переходе")
+        XCTAssertTrue(app.staticTexts["popupBlockedText"].label.hasPrefix("Переход на другой сайт заблокирован"),
+                      "текст плашки: \(app.staticTexts["popupBlockedText"].label)")
+        sleep(1)
+        XCTAssertEqual(title.label, "Kentik Player Redirect · нажато", "вкладку увело на рекламу")
+        attachScreenshot(app, name: "01-player-redirect-blocked")
+
+        let open = app.buttons["popupBlockedOpen"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5), "нет кнопки «Открыть»")
+        open.tap()
+        waitForTitle(app, "Kentik Ad Landing")
+    }
+
+    /// (9) Прозрачная ссылка target=_blank на весь экран: касание текста страницы не
+    /// открывает рекламную вкладку, а достаётся тексту.
+    @MainActor
+    func testInvisibleFullPageLinkIsRemoved() {
+        let app = launch("blank-overlay.html")
+        waitForTitle(app, "Kentik Blank Overlay")
+        let text = webText(app, "Список серий")
+        sleep(2)   // ссылка-перехватчик появляется через 300 мс после загрузки
+
+        tapCenter(of: text)
+        waitForTitle(app, "Kentik Blank Overlay · текст")
+        sleep(1)
+        XCTAssertEqual(app.buttons["tabsButton"].value as? String, "1", "открылась рекламная вкладка")
+        attachScreenshot(app, name: "blank-overlay-removed")
+    }
+
     // MARK: - Вспомогательное
 
     @MainActor

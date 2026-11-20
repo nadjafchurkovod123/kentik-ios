@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 16px; background: #0f0a17; color: #fbfbfe; font: 17px -apple-system, system-ui, sans-serif; }
+  h1 { color: #a78bfa; font-size: 22px; margin: 0 0 12px; }
+  .player { height: 220px; border-radius: 12px; background: #1e0b36; display: flex; align-items: center; justify-content: center;
+            font-size: 22px; color: #c08cf0; cursor: pointer; user-select: none; -webkit-user-select: none; }
+  a { color: #a78bfa; font-size: 20px; display: inline-block; padding: 12px 0; }
+  p { color: #bfbfc9; }
+</style>
+<title>Kentik Blank Overlay</title>
+<style> .text { padding: 24px 0; font-size: 20px; } </style>
+</head>
+<body>
+  <h1>Невидимая ссылка на весь экран</h1>
+  <p class="text" id="text">Список серий</p>
+  <p>Через 300 мс скрипт кладёт прозрачную ссылку target=_blank поверх всей страницы.</p>
+  <script>
+    document.getElementById('text').addEventListener('click', function () {
+      document.title = 'Kentik Blank Overlay · текст';
+    });
+    setTimeout(function () {
+      var a = document.createElement('a');
+      a.id = 'ad-link';
+      a.href = 'http://localhost:8765/popups/ad-landing.html';
+      a.target = '_blank';
+      a.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:transparent;display:block';
+      document.body.appendChild(a);
+    }, 300);
+  </script>
+</body>
+</html>

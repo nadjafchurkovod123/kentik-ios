@@ -30,16 +30,25 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        if let tab { GuardState.shared.recordProvisional(on: tab, started: true) }
         tab?.notifyChanged()
     }
 
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        if let tab { GuardState.shared.recordCommit(on: tab) }
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if let tab { ContentBlocker.shared.pageDidFinishLoading(tab: tab) }
+        if let tab {
+            GuardState.shared.recordProvisional(on: tab, started: false)
+            ContentBlocker.shared.pageDidFinishLoading(tab: tab)
+        }
         tab?.notifyChanged()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         logNavigationError(error)
+        if let tab { GuardState.shared.recordProvisional(on: tab, started: false) }
         tab?.notifyChanged()
     }
 
@@ -49,6 +58,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         withError error: Error
     ) {
         logNavigationError(error)
+        if let tab { GuardState.shared.recordProvisional(on: tab, started: false) }
         tab?.notifyChanged()
     }
 

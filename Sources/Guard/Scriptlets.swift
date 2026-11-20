@@ -89,6 +89,8 @@ enum Scriptlets {
         var path = e.composedPath ? e.composedPath() : [];
         for (var i = 0; i < path.length; i++) {
           var n = path[i];
+          // Касание пришлось на убранный Kentik перехватчик — его ссылка не считается.
+          if (n && n.nodeType === 1 && n.getAttribute && n.getAttribute('data-kentik-hidden')) return null;
           if (n && n.nodeType === 1 && n.localName && (n.localName === 'a' || n.localName === 'area') && linkHref(n)) return n;
         }
         return null;
@@ -108,7 +110,8 @@ enum Scriptlets {
         return !!t && t !== '_self' && t !== '_parent' && t !== '_top' && !frameNamed(t);
       }
       if (!cfg.enabled) return;
-      if (cfg.disabled.indexOf(norm(topHost())) !== -1) return;
+      // В списке — регистрируемые домены: выключение на kinogo.ru действует и на m.kinogo.ru.
+      if (matches(norm(topHost()), cfg.disabled)) return;
     """#
 
     // MARK: - Мир страницы
@@ -237,19 +240,31 @@ enum Scriptlets {
         if (e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
         return { x: e.clientX, y: e.clientY };
       }
+      function anchorAtPoint(x, y) {
+        var el = D.elementFromPoint(x, y);
+        while (el && el.nodeType === 1) {
+          if ((el.localName === 'a' || el.localName === 'area') && linkHref(el)) return el;
+          el = el.parentElement;
+        }
+        return null;
+      }
       function onDown(e) {
         if (!e.isTrusted) return;
-        var a = anchorFrom(e);
+        var p = pointOf(e);
+        // Сначала убираем невидимый перехватчик (над плеером или на весь экран): касание
+        // и ссылка под пальцем — то, что под ним.
+        var shielded = shieldOverlayAt(e.target, p.x, p.y) || shieldPageOverlay(e.target);
+        var a = shielded ? anchorAtPoint(p.x, p.y) : anchorFrom(e);
         var t = now();
         if (a || t - lastPost > 250) {
           lastPost = t;
           post({ type: 'tap', link: a ? linkHref(a) : null, top: isTop });
         }
-        down = a ? { el: a, href: linkHref(a), target: targetOf(a), attr: a.getAttribute('target'), t: t } : null;
-        var p = pointOf(e);
-        if (shieldOverlayAt(e.target, p.x, p.y)) {
-          e.stopImmediatePropagation();
-        }
+        // pointerdown, touchstart и mousedown одного касания: следующее событие без ссылки
+        // (например, на уже убранном перехватчике) не стирает ссылку, найденную первым.
+        if (a) down = { el: a, href: linkHref(a), target: targetOf(a), attr: a.getAttribute('target'), t: t };
+        else if (!down || t - down.t > 600) down = null;
+        if (shielded) e.stopImmediatePropagation();
       }
       W.addEventListener('pointerdown', onDown, true);
       W.addEventListener('touchstart', onDown, { capture: true, passive: true });
@@ -339,6 +354,44 @@ enum Scriptlets {
           if (o) { neutralize(o); return true; }
         }
         return false;
+      }
+      // Невидимая ссылка или пустой слой поверх большей части экрана — где бы ни пришлось
+      // касание (список серий, кнопки, текст): каждое касание уводит в рекламную вкладку.
+      function siteOf(h) {
+        var parts = String(h || '').toLowerCase().split('.');
+        return parts.slice(-2).join('.');
+      }
+      function pageOverlayCandidate(el) {
+        if (!el || el.nodeType !== 1 || el === D.body || el === D.documentElement) return false;
+        var cs = W.getComputedStyle(el);
+        if (cs.position !== 'fixed' && cs.position !== 'absolute') return false;
+        if (cs.pointerEvents === 'none' || cs.display === 'none' || cs.visibility === 'hidden') return false;
+        var r = el.getBoundingClientRect(), vw = W.innerWidth, vh = W.innerHeight;
+        var ix = Math.max(0, Math.min(r.right, vw) - Math.max(r.left, 0));
+        var iy = Math.max(0, Math.min(r.bottom, vh) - Math.max(r.top, 0));
+        var covered = ix * iy;
+        if (covered < 0.5 * vw * vh) return false;
+        if (!invisible(el, cs)) return false;
+        if (el.localName === 'a' || el.localName === 'area') {
+          // Ссылка-перехватчик: в новое окно или на другой сайт (растянутая ссылка карточки
+          // своего сайта — не она).
+          var href = linkHref(el);
+          if (!href || isLogin(href)) return false;
+          return isNewWindowTarget(targetOf(el)) || siteOf(hostOf(href)) !== siteOf(W.location.hostname);
+        }
+        var z = parseInt(cs.zIndex, 10) || 0;
+        return z >= 100000 && covered >= 0.8 * vw * vh;
+      }
+      function shieldPageOverlay(target) {
+        if (!target || target.nodeType !== 1) return false;
+        var best = null, node = target;
+        while (node && node !== D.body && node !== D.documentElement) {
+          if (pageOverlayCandidate(node)) best = node;
+          node = node.parentElement;
+        }
+        if (!best) return false;
+        neutralize(best);
+        return true;
       }
       function scanOverlays() {
         var list = players();

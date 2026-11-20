@@ -14,9 +14,10 @@ enum PopupDecision: Equatable {
 /// программные клики по ссылкам target=_blank, так что большинство попандеров сюда даже
 /// не доходит. Сюда попадают окна, которые WebKit всё же хочет открыть (по жесту
 /// пользователя — javaScriptCanOpenWindowsAutomatically выключен). Правило простое:
-/// новая вкладка открывается только для настоящего касания обычной ссылки в главном фрейме
-/// и не на рекламный адрес; окна от входа через OAuth тоже пропускаем. Остальное —
-/// блокируем и показываем плашку «Всплывающее окно заблокировано · Открыть».
+/// новая вкладка открывается только для настоящего касания обычной ссылки в главном фрейме,
+/// только на сайт этой самой ссылки (адрес запомнен в момент касания — подмена href в
+/// обработчике клика не проходит) и не на рекламный адрес; окна от входа через OAuth тоже
+/// пропускаем. Остальное — блокируем и показываем плашку «Всплывающее окно заблокировано».
 @MainActor
 final class PopupGuard {
 
@@ -84,12 +85,17 @@ final class PopupGuard {
         guard let tapped = state.recentLinkURL(now, within: Self.tapWindow) else {
             return .block(reason: "окно без касания ссылки")
         }
-        if request.isLinkActivation {
-            return .allowNewTab(background: false)
-        }
-        // window.open с адресом той самой ссылки, которой коснулись (сайт открывает её сам).
+        // Окно с адресом той самой ссылки, которой коснулись (или сайт открывает её сам).
         if Self.sameDocument(tapped, request.url) {
             return .allowNewTab(background: false)
+        }
+        if request.isLinkActivation {
+            // Касание ссылки разрешает только её собственный сайт: скрипт, подменивший href
+            // в момент клика, или чужая невидимая ссылка-перехватчик не проходят.
+            if let site = Domain.registrable(tapped.host), site == Domain.registrable(request.url?.host) {
+                return .allowNewTab(background: false)
+            }
+            return .block(reason: "ссылку подменили: касались \(tapped.host ?? "?")")
         }
         return .block(reason: "window.open после касания")
     }
@@ -114,6 +120,12 @@ enum GuardFrames {
         let selector = #selector(getter: WKNavigationAction.sourceFrame)
         guard action.responds(to: selector) else { return nil }
         return action.perform(selector)?.takeUnretainedValue() as? WKFrameInfo
+    }
+
+    /// Серверное перенаправление (WKNavigationAction._isRedirect); nil — WebKit не сообщает.
+    static func isRedirect(_ action: WKNavigationAction) -> Bool? {
+        guard action.responds(to: NSSelectorFromString("_isRedirect")) else { return nil }
+        return (action.value(forKey: "_isRedirect") as? NSNumber)?.boolValue
     }
 
     static func targetFrame(of action: WKNavigationAction) -> WKFrameInfo? {

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 16px; background: #0f0a17; color: #fbfbfe; font: 17px -apple-system, system-ui, sans-serif; }
+  h1 { color: #a78bfa; font-size: 22px; margin: 0 0 12px; }
+  .player { height: 220px; border-radius: 12px; background: #1e0b36; display: flex; align-items: center; justify-content: center;
+            font-size: 22px; color: #c08cf0; cursor: pointer; user-select: none; -webkit-user-select: none; }
+  a { color: #a78bfa; font-size: 20px; display: inline-block; padding: 12px 0; }
+  p { color: #bfbfc9; }
+</style>
+<title>Kentik Hijack</title>
+</head>
+<body>
+  <h1>Подмена ссылки в момент клика</h1>
+  <div style="height: 90px"></div>
+  <!-- Как на сайтах с сериалами: обработчик на document (фаза перехвата) в момент клика
+       подменяет адрес ссылки на рекламу и открывает её в новой вкладке. -->
+  <a id="ep2" href="target.html" data-stop="1">Серия 2</a>
+  <p>«Серия 2»: скрипт ещё и останавливает всплытие события.</p>
+  <a id="ep3" href="target.html">Серия 3</a>
+  <p>«Серия 3»: только подмена адреса и target.</p>
+  <script>
+    document.addEventListener('click', function (e) {
+      var a = e.target.closest ? e.target.closest('a') : null;
+      if (!a) return;
+      a.href = 'http://localhost:8765/popups/ad-landing.html';
+      a.target = '_blank';
+      document.title = 'Kentik Hijack · ' + a.id;
+      if (a.getAttribute('data-stop')) e.stopPropagation();
+    }, true);
+  </script>
+</body>
+</html>
