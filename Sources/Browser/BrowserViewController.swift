@@ -655,9 +655,14 @@ final class BrowserViewController: UIViewController {
         let loading = tab?.isLoading ?? false
 
         // Над строкой состояния — цвет темы сайта (если адрес внизу), иначе цвет панели.
+        // На домашнем экране — чёрный, как обои.
         var topColor = palette.bar
-        if position == .bottom, !incognito, tab?.url != nil, let theme = tab?.webView.themeColor {
-            topColor = theme
+        if position == .bottom, !incognito, let tab {
+            if tab.displayURL == nil {
+                topColor = .black
+            } else if let theme = tab.webView.themeColor {
+                topColor = theme
+            }
         }
         topBackground.backgroundColor = topColor
         bottomBackground.backgroundColor = palette.bar

@@ -52,7 +52,7 @@ final class ToastView: UIView {
     /// Показать над `anchor` (верхний край нижней панели) и спрятать через `duration`.
     @MainActor
     static func show(_ text: String, symbol: String?, in container: UIView, above anchor: NSLayoutYAxisAnchor,
-                     duration: TimeInterval = 1.8) {
+                     duration: TimeInterval = 2.4) {
         container.subviews.compactMap { $0 as? ToastView }.forEach { $0.removeFromSuperview() }
         let toast = ToastView(text: text, symbol: symbol)
         toast.translatesAutoresizingMaskIntoConstraints = false

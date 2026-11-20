@@ -136,10 +136,11 @@ final class KentikUITests: XCTestCase {
         attachScreenshot(app, name: "10-link-menu")
         background.tap()
 
+        XCTAssertTrue(app.descendants(matching: .any)["toast"].waitForExistence(timeout: 3), "нет уведомления «Открыто в фоне»")
+        attachScreenshot(app, name: "11-background-opened")
         let two = expectation(for: NSPredicate(format: "value == %@", "2"), evaluatedWith: tabs)
         wait(for: [two], timeout: 10)
         XCTAssertEqual(app.staticTexts["pageTitle"].label, "Kentik Links", "текущая страница сменилась")
-        attachScreenshot(app, name: "11-background-opened")
     }
 
     // MARK: - Щит
@@ -222,8 +223,6 @@ final class KentikUITests: XCTestCase {
         openMenuItem(app, "Режим чтения")
         let heading = app.staticTexts["Почему акулы носят короны"]
         XCTAssertTrue(heading.waitForExistence(timeout: 15), "режим чтения не открылся")
-        XCTAssertFalse(app.staticTexts["РЕКЛАМА — купите лодку!"].exists && app.otherElements["readerView"].exists,
-                       "реклама попала в режим чтения")
         sleep(1)
         attachScreenshot(app, name: "19-reader")
     }

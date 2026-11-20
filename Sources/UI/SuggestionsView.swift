@@ -25,7 +25,8 @@ final class SuggestionsView: UIView, UITableViewDataSource, UITableViewDelegate 
         tableView.keyboardDismissMode = .onDrag
         tableView.dataSource = self
         tableView.delegate = self
-        tableView.rowHeight = 56
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = 62
         tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         tableView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(tableView)
@@ -43,7 +44,7 @@ final class SuggestionsView: UIView, UITableViewDataSource, UITableViewDelegate 
 
     func applyPalette(_ palette: ChromePalette) {
         self.palette = palette
-        backgroundColor = palette.background.withAlphaComponent(0.98)
+        backgroundColor = palette.background
         tableView.separatorColor = palette.line
         tableView.reloadData()
     }

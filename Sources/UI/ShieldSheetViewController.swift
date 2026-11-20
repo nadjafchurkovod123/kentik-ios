@@ -34,7 +34,7 @@ final class ShieldSheetViewController: UIViewController {
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .pageSheet
         if let sheet = sheetPresentationController {
-            sheet.detents = [.custom(identifier: .init("shield")) { _ in 440 }, .large()]
+            sheet.detents = [.custom(identifier: .init("shield")) { _ in 400 }, .large()]
             sheet.prefersGrabberVisible = true
             sheet.preferredCornerRadius = 24
         }

@@ -56,6 +56,9 @@ enum ReaderExtractor {
       });
       var h1 = document.querySelector('h1');
       var title = (h1 && h1.innerText.trim()) || document.title || '';
+      // Заголовок показываем сами — убираем его повтор из текста статьи.
+      var dup = clone.querySelector('h1');
+      if (dup && dup.textContent.trim() === title) dup.remove();
       return JSON.stringify({ title: title, site: location.hostname, html: clone.innerHTML, text: (clone.innerText || clone.textContent || '').trim().length });
     })();
     """

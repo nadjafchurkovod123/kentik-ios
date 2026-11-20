@@ -151,7 +151,11 @@ final class HomeView: UIView, UIContextMenuInteractionDelegate {
         let icon = UIImageView(image: UIImage(systemName: "eye.slash.fill"))
         icon.tintColor = Theme.violet
         icon.preferredSymbolConfiguration = .init(pointSize: 22, weight: .semibold)
+        icon.contentMode = .center
+        icon.setContentHuggingPriority(.required, for: .horizontal)
+        icon.setContentCompressionResistancePriority(.required, for: .horizontal)
         let title = UILabel()
+        title.setContentHuggingPriority(.defaultLow, for: .horizontal)
         title.text = "Режим инкогнито"
         title.font = .systemFont(ofSize: 19, weight: .bold)
         title.textColor = Theme.text
