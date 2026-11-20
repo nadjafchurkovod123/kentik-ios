@@ -5,7 +5,7 @@ import UIKit
 final class ShieldSheetViewController: UIViewController {
 
     private let shield: ShieldControlling
-    private weak var tab: Tab?
+    private weak var currentTab: Tab?
     private let incognito: Bool
     /// Открыть настройки (шторка к этому моменту уже закрыта).
     var onOpenSettings: (() -> Void)?
@@ -25,11 +25,11 @@ final class ShieldSheetViewController: UIViewController {
     private let versionLabel = UILabel()
     private let spinner = UIActivityIndicatorView(style: .medium)
 
-    private var host: String? { tab?.host }
+    private var host: String? { currentTab?.host }
 
     init(shield: ShieldControlling, tab: Tab?) {
         self.shield = shield
-        self.tab = tab
+        self.currentTab = tab
         self.incognito = tab?.isIncognito ?? false
         super.init(nibName: nil, bundle: nil)
         modalPresentationStyle = .pageSheet
@@ -181,7 +181,7 @@ final class ShieldSheetViewController: UIViewController {
         siteSubtitle.text = hostText.isEmpty ? "Откройте сайт" : hostText
         siteTitle.alpha = siteSwitch.isEnabled ? 1 : 0.5
 
-        if let tab {
+        if let tab = currentTab {
             let stats = shield.stats(for: tab)
             popupsValue.text = "\(stats.blockedPopups)"
             redirectsValue.text = "\(stats.blockedRedirects)"
