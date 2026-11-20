@@ -62,6 +62,7 @@ final class TabManager {
         guard let index = tabs.firstIndex(where: { $0 === tab }) else { return }
         tabs.remove(at: index)
         tab.tearDown()
+        if !tab.isIncognito { SessionStore.shared.noteNormalTabClosed() }
         if tab.isIncognito && !hasIncognitoTabs {
             WebViewFactory.resetIncognitoSession()
         }

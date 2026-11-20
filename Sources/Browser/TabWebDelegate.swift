@@ -53,8 +53,9 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-        // Процесс страницы упал (обычно нехватка памяти) — перезагружаем.
-        webView.reload()
+        // Процесс страницы упал (обычно нехватка памяти): решает вкладка — видимую
+        // перезагрузить сразу, фоновую при показе, частые падения не повторять.
+        tab?.webContentProcessDidTerminate()
     }
 
     // MARK: - WKUIDelegate

@@ -22,6 +22,11 @@ final class SessionStore {
 
     private let fileURL: URL
     private var saveScheduled = false
+    /// Вкладки уже восстановлены (или решено их не восстанавливать). До этого сохранять
+    /// нельзя: пустой снимок (вкладок ещё нет, ждём блокировщик) затёр бы сохранённую сессию.
+    private(set) var didRestore = false
+    /// Пользователь закрывал обычные вкладки после восстановления — пустой снимок законен.
+    private var closedNormalTabs = false
     /// Вкладки, восстановленные из файла, но ещё не загруженные (грузятся при первом показе).
     private var pending: [UUID: SavedTab] = [:]
 
@@ -42,6 +47,8 @@ final class SessionStore {
     /// Загрузить восстановленную вкладку, если она ещё не загружена.
     func loadPendingIfNeeded(_ tab: Tab) {
         guard let saved = pending.removeValue(forKey: tab.id) else { return }
+        // Адрес на случай, если процесс страницы упадёт до первой загрузки.
+        tab.noteRequestedURL(saved.url)
         if let state = saved.state {
             tab.webView.interactionState = state
             // Если состояние не подошло (другая версия WebKit), просто открываем адрес.
@@ -56,6 +63,16 @@ final class SessionStore {
 
     func forget(_ tab: Tab) {
         pending.removeValue(forKey: tab.id)
+    }
+
+    /// Восстановление закончено — с этого момента сессию можно сохранять.
+    func markRestored() {
+        didRestore = true
+    }
+
+    /// Пользователь закрыл обычную вкладку (зовёт TabManager).
+    func noteNormalTabClosed() {
+        closedNormalTabs = true
     }
 
     // MARK: - Диск
@@ -84,7 +101,7 @@ final class SessionStore {
     }
 
     func scheduleSave(_ manager: TabManager) {
-        guard !TestHooks.isUITest, !saveScheduled else { return }
+        guard !TestHooks.isUITest, didRestore, !saveScheduled else { return }
         saveScheduled = true
         runAfter(1.5) { [weak self, weak manager] in
             guard let self else { return }
@@ -94,8 +111,12 @@ final class SessionStore {
     }
 
     func saveNow(_ manager: TabManager) {
-        guard !TestHooks.isUITest else { return }
+        guard !TestHooks.isUITest, didRestore else { return }
         let session = snapshot(of: manager)
+        // Пустой снимок не затирает непустой файл, если пользователь сам вкладки не закрывал.
+        if session.tabs.isEmpty, !closedNormalTabs, let existing = load(), !existing.tabs.isEmpty {
+            return
+        }
         guard let data = try? JSONEncoder().encode(session) else { return }
         try? FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)

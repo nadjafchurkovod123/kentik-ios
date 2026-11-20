@@ -222,3 +222,63 @@ final class UIModelTests: XCTestCase {
         manager.close(secret)
     }
 }
+
+/// Сохранение сессии и падения процесса страницы.
+@MainActor
+final class SessionAndCrashTests: XCTestCase {
+
+    func testEmptySnapshotNeverWipesSavedSessionBeforeRestoreOrWithoutClosing() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("s-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let saved = SavedSession(tabs: [SavedTab(url: URL(string: "https://kept.example/")!, title: "Kept", state: nil)],
+                                 selectedIndex: 0)
+        try JSONEncoder().encode(saved).write(to: url)
+
+        let store = SessionStore(fileURL: url)
+        let manager = TabManager()   // вкладок ещё нет: блокировщик готовится
+        store.saveNow(manager)
+        XCTAssertEqual(store.load(), saved, "до восстановления сессию не трогаем")
+
+        store.markRestored()
+        store.saveNow(manager)
+        XCTAssertEqual(store.load(), saved, "пустой снимок не затирает сохранённые вкладки")
+
+        store.noteNormalTabClosed()
+        store.saveNow(manager)
+        XCTAssertEqual(store.load()?.tabs.count, 0, "пользователь закрыл вкладки — пустая сессия законна")
+    }
+
+    func testCrashRecoveryStopsLooping() {
+        var recovery = CrashRecovery()
+        let start = Date(timeIntervalSince1970: 5_000)
+        recovery.recordCrash(at: start)
+        XCTAssertTrue(recovery.needsReload)
+        XCTAssertFalse(recovery.gaveUp)
+        recovery.needsReload = false
+        recovery.recordCrash(at: start.addingTimeInterval(5))
+        XCTAssertTrue(recovery.needsReload, "второе падение — ещё одна попытка")
+        recovery.recordCrash(at: start.addingTimeInterval(10))
+        XCTAssertTrue(recovery.gaveUp, "третье падение за 30 с — больше не перезагружаем")
+        XCTAssertFalse(recovery.needsReload)
+
+        // Через минуту — снова можно.
+        recovery.recordCrash(at: start.addingTimeInterval(100))
+        XCTAssertFalse(recovery.gaveUp)
+        XCTAssertTrue(recovery.needsReload)
+        recovery.reset()
+        XCTAssertEqual(recovery, CrashRecovery())
+    }
+
+    func testBackgroundTabCrashReloadsOnlyWhenShown() {
+        let manager = TabManager()
+        let visible = manager.addTab(incognito: false)
+        let background = manager.addTab(incognito: false, select: false)
+        XCTAssertTrue(manager.selectedTab === visible)
+        background.webContentProcessDidTerminate()
+        XCTAssertTrue(background.crashRecovery.needsReload, "фоновая вкладка ждёт показа")
+        background.reloadAfterCrashIfNeeded()
+        XCTAssertFalse(background.crashRecovery.needsReload)
+        manager.close(background)
+        manager.close(visible)
+    }
+}

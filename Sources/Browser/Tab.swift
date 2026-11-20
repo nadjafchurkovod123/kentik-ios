@@ -1,4 +1,30 @@
+import UIKit
 import WebKit
+
+/// Восстановление после падения процесса страницы (обычно нехватка памяти): не больше
+/// `limit` автоматических перезагрузок за `window` секунд, иначе — не зацикливаться.
+struct CrashRecovery: Equatable {
+    static let limit = 2
+    static let window: TimeInterval = 30
+
+    private(set) var crashes: [Date] = []
+    /// Страницу надо перезагрузить, когда вкладка окажется на экране.
+    var needsReload = false
+    /// Падает слишком часто — сами больше не перезагружаем, ждём пользователя.
+    private(set) var gaveUp = false
+
+    mutating func recordCrash(at now: Date) {
+        crashes = crashes.filter { now.timeIntervalSince($0) <= Self.window } + [now]
+        gaveUp = crashes.count > Self.limit
+        needsReload = !gaveUp
+    }
+
+    mutating func reset() {
+        crashes.removeAll()
+        gaveUp = false
+        needsReload = false
+    }
+}
 
 /// Вкладка браузера. Владеет своим WKWebView (создаёт его WebViewFactory) и следит за его
 /// состоянием; об изменениях сообщает через `TabManager.tabDidUpdate(_:)`.
@@ -22,6 +48,8 @@ final class Tab {
     private(set) var isLoading = false
     private(set) var canGoBack = false
     private(set) var canGoForward = false
+    /// Падения процесса страницы и отложенная перезагрузка.
+    private(set) var crashRecovery = CrashRecovery()
 
     // Счётчики щита для этой вкладки. Пишет Browser (по решениям PopupGuard/RedirectGuard)
     // и модуль Blocking; UI читает через ShieldControlling.stats(for:).
@@ -60,8 +88,60 @@ final class Tab {
 
     func goBack() { webView.goBack() }
     func goForward() { webView.goForward() }
-    func reload() { webView.reload() }
     func stopLoading() { webView.stopLoading() }
+
+    /// Обновить (пользователь): заодно сбрасывает счётчик падений.
+    func reload() {
+        crashRecovery.reset()
+        if webView.url != nil {
+            webView.reload()
+        } else if let requestedURL {
+            load(requestedURL)
+        }
+    }
+
+    /// Адрес, который вкладка собирается открыть (восстановление сессии через interactionState).
+    func noteRequestedURL(_ url: URL) {
+        if webView.url == nil { requestedURL = url }
+    }
+
+    // MARK: - Падение процесса страницы
+
+    /// Процесс страницы убит системой. Видимую вкладку перезагружаем сразу (если приложение
+    /// на экране), фоновые — когда их покажут; при частых падениях — не зацикливаемся.
+    func webContentProcessDidTerminate(at now: Date = Date()) {
+        crashRecovery.recordCrash(at: now)
+        let visible = manager?.selectedTab === self && UIApplication.shared.applicationState == .active
+        if visible {
+            if crashRecovery.gaveUp {
+                showCrashNotice()
+            } else {
+                reloadAfterCrashIfNeeded()
+            }
+        }
+        notifyChanged()
+    }
+
+    /// Перезагрузить упавшую страницу, если это ещё не сделано (показ вкладки, возврат из фона).
+    func reloadAfterCrashIfNeeded() {
+        if crashRecovery.gaveUp {
+            showCrashNotice()
+            return
+        }
+        guard crashRecovery.needsReload else { return }
+        crashRecovery.needsReload = false
+        if webView.url != nil {
+            webView.reload()
+        } else if let requestedURL {
+            // Процесс упал до первой загрузки: reload() ничего бы не сделал.
+            load(requestedURL)
+        }
+    }
+
+    private func showCrashNotice() {
+        BrowserUI.host?.showToast("Странице не хватает памяти. Нажмите «Обновить», чтобы попробовать ещё раз",
+                                  symbol: "exclamationmark.triangle")
+    }
 
     /// Освобождает веб-вью при закрытии вкладки.
     func tearDown() {

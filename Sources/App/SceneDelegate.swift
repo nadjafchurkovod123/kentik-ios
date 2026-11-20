@@ -53,6 +53,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneDidBecomeActive(_ scene: UIScene) {
         hidePrivacyCover()
+        browser?.didBecomeActive()
         if wasInBackground {
             wasInBackground = false
             browser?.unlockIfNeeded()

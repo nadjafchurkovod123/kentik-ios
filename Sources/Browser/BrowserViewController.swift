@@ -35,7 +35,6 @@ final class BrowserViewController: UIViewController {
     private var zoomHost: [UUID: String] = [:]
     private var dialogCount: [UUID: Int] = [:]
     private var dialogsMuted: Set<UUID> = []
-    private var preparedWebViews = Set<ObjectIdentifier>()
     private var pendingExternalURLs: [URL] = []
     private var isReady = false
     private lazy var addressPan = UIPanGestureRecognizer(target: self, action: #selector(addressPanned(_:)))
@@ -86,6 +85,8 @@ final class BrowserViewController: UIViewController {
                 tabManager.addTab(incognito: false)
             }
         }
+        // С этого момента сессию можно сохранять (раньше пустой снимок затёр бы файл).
+        SessionStore.shared.markRestored()
         let external = pendingExternalURLs
         pendingExternalURLs.removeAll()
         external.forEach(openExternal)
@@ -128,8 +129,15 @@ final class BrowserViewController: UIViewController {
     }
 
     func saveState() {
-        SessionStore.shared.saveNow(tabManager)
+        // До восстановления вкладок (блокировщик ещё готовится) сессию не трогаем.
+        if isReady { SessionStore.shared.saveNow(tabManager) }
         HistoryStore.shared.saveNow()
+    }
+
+    /// Приложение снова на экране: упавшую, пока были в фоне, страницу перезагрузить.
+    func didBecomeActive() {
+        guard isReady else { return }
+        tabManager.selectedTab?.reloadAfterCrashIfNeeded()
     }
 
     /// Вернулись из фона: если инкогнито заперто и на экране — спросить Face ID.
@@ -590,6 +598,7 @@ final class BrowserViewController: UIViewController {
         }
         if let tab {
             SessionStore.shared.loadPendingIfNeeded(tab)
+            tab.reloadAfterCrashIfNeeded()
             let webView: WKWebView = tab.webView
             prepare(webView)
             webView.translatesAutoresizingMaskIntoConstraints = false
@@ -607,10 +616,10 @@ final class BrowserViewController: UIViewController {
     }
 
     /// Разовая настройка веб-вью: поиск по странице и «потяни, чтобы обновить».
+    /// Признак «уже настроено» — сам refreshControl веб-вью (не адрес объекта: после закрытия
+    /// вкладки новая веб-вью может получить тот же адрес в памяти).
     private func prepare(_ webView: WKWebView) {
-        let key = ObjectIdentifier(webView)
-        guard !preparedWebViews.contains(key) else { return }
-        preparedWebViews.insert(key)
+        guard webView.scrollView.refreshControl == nil else { return }
         webView.isFindInteractionEnabled = true
         let refresh = UIRefreshControl()
         refresh.tintColor = Theme.violet
