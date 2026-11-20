@@ -56,11 +56,12 @@ final class PopupGuardUITests: XCTestCase {
     @MainActor
     func testTimerRedirectBlockedButTappedLinkAllowed() {
         let app = launch("redirect.html", extra: ["-KentikTestAdHosts", "localhost"])
-        let title = waitForTitle(app, "Kentik Redirect")
-
-        waitForTitle(app, "Kentik Redirect · таймер", timeout: 20)
+        // Таймер срабатывает через секунду после загрузки; если переход отменён, страница
+        // остаётся и сама меняет заголовок.
+        let title = waitForTitle(app, "Kentik Redirect · таймер")
         XCTAssertTrue(app.descendants(matching: .any)["popupBlockedBar"].waitForExistence(timeout: 10),
                       "нет плашки о заблокированном переходе")
+        XCTAssertTrue(app.staticTexts["popupBlockedText"].label.hasPrefix("Переход на рекламу заблокирован"))
         sleep(1)
         XCTAssertEqual(title.label, "Kentik Redirect · таймер", "вкладку увело на рекламу")
         attachScreenshot(app, name: "01-timer-redirect-blocked")
