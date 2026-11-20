@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>REAL ожидание</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 16px 20px; background: #0f0a17; color: #fbfbfe;
+         font: 17px -apple-system, system-ui, sans-serif; }
+  h1 { color: #a78bfa; font-size: 24px; margin: 0 0 12px; }
+  .row { margin: 8px 0; padding: 10px 12px; border-radius: 10px; background: #1e0b36; word-break: break-all; }
+  .bad { color: #ff6b81; font-weight: 700; }
+  .good { color: #5ee0a0; font-weight: 700; }
+</style>
+<script>
+  // Страница сообщает, выполнились ли настоящие рекламные скрипты:
+  // заголовок «REAL ads=… gtm=…», где blocked — загрузка отменена (блокировщик),
+  // ran — скрипт загрузился и выполнился, loaded — загрузился, но следов выполнения нет.
+  window.R = { ads: 'pending', gtm: 'pending' };
+  function ran(key) {
+    if (key === 'ads') return !!(window.adsbygoogle && (window.adsbygoogle.loaded || window.adsbygoogle.push !== Array.prototype.push));
+    return !!(window.google_tag_manager || window.google_tag_data);
+  }
+  function done(key, ok) {
+    if (R[key] !== 'pending') return;
+    R[key] = ok ? (ran(key) ? 'ran' : 'loaded') : 'blocked';
+    update();
+  }
+  function update() {
+    for (const key of ['ads', 'gtm']) {
+      const el = document.getElementById(key);
+      if (!el) continue;
+      el.textContent = R[key];
+      el.className = R[key] === 'blocked' ? 'good' : (R[key] === 'pending' ? '' : 'bad');
+    }
+    if (R.ads !== 'pending' && R.gtm !== 'pending') {
+      document.title = 'REAL ads=' + R.ads + ' gtm=' + R.gtm;
+    }
+  }
+  window.adsbygoogle = window.adsbygoogle || [];
+  window.dataLayer = window.dataLayer || [];
+  setTimeout(() => { if (R.ads === 'pending') { R.ads = 'timeout'; } if (R.gtm === 'pending') { R.gtm = 'timeout'; } update(); }, 25000);
+</script>
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js"
+        onload="done('ads', true)" onerror="done('ads', false)"></script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-KENTIKTEST"
+        onload="done('gtm', true)" onerror="done('gtm', false)"></script>
+</head>
+<body>
+  <h1>Фикстура: настоящая реклама</h1>
+  <div class="row">pagead2.googlesyndication.com/…/adsbygoogle.js: <span id="ads">pending</span></div>
+  <div class="row">www.googletagmanager.com/gtag/js: <span id="gtm">pending</span></div>
+  <script>update();</script>
+</body>
+</html>

@@ -39,14 +39,22 @@ jobs:
           command -v xcbeautify >/dev/null || brew install xcbeautify
           xcodegen --version
 
-      # ─────────────────────────────────────────────────────────────────────────
-      # ЗАГЛУШКА: сборка списков фильтров (заполнит агент блокировщика).
-      # Здесь списки (EasyList, uBlock и т. п.) скачиваются и конвертируются в JSON
-      # WKContentRuleList, кладутся в Sources/Resources/Filters/ ДО xcodegen generate,
-      # чтобы попасть в бандл, а версия пишется в Info.plist (KentikFilterListsVersion).
-      # ─────────────────────────────────────────────────────────────────────────
-      - name: "ЗАГЛУШКА: сборка списков фильтров"
-        run: echo "Списки фильтров пока не собираются (каркас)."
+      # Списки фильтров: источники → AdGuard SafariConverterLib → JSON WKContentRuleList.
+      # Кладутся в Sources/Resources/Filters/ ДО xcodegen generate (папка попадает в бандл как
+      # Filters/), версия пишется в Info.plist (KentikFilterListsVersion).
+      - name: Сборка списков фильтров
+        id: filters
+        uses: ./.github/actions/build-filters
+        with:
+          out: Sources/Resources/Filters
+
+      - name: Версия списков в Info.plist
+        env:
+          LISTS_VERSION: ${{ steps.filters.outputs.version }}
+        run: |
+          /usr/libexec/PlistBuddy -c "Delete :KentikFilterListsVersion" Sources/Resources/Info.plist 2>/dev/null || true
+          /usr/libexec/PlistBuddy -c "Add :KentikFilterListsVersion string $LISTS_VERSION" Sources/Resources/Info.plist
+          echo "KentikFilterListsVersion = $LISTS_VERSION"
 
       - name: Генерация проекта
         run: xcodegen generate

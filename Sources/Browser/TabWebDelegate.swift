@@ -22,6 +22,9 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         if policy == .cancel {
             tab.blockedRedirects += 1
             tab.notifyChanged()
+        } else if navigationAction.targetFrame?.isMainFrame ?? true {
+            // Щит по настройкам сайта, куда идём: ставит/снимает списки до загрузки страницы.
+            ContentBlocker.shared.prepareNavigation(of: webView, to: navigationAction.request.url)
         }
         decisionHandler(policy)
     }
@@ -31,6 +34,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if let tab { ContentBlocker.shared.pageDidFinishLoading(tab: tab) }
         tab?.notifyChanged()
     }
 

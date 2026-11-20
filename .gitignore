@@ -9,3 +9,6 @@ DerivedData/
 xcuserdata/
 .DS_Store
 __pycache__/
+
+# Списки фильтров собирает CI (scripts/filters)
+Sources/Resources/Filters/

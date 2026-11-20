@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ADS ожидание</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 16px 20px; background: #0f0a17; color: #fbfbfe;
+         font: 17px -apple-system, system-ui, sans-serif; }
+  h1 { color: #a78bfa; font-size: 24px; margin: 0 0 12px; }
+  .row { margin: 8px 0; padding: 10px 12px; border-radius: 10px; background: #1e0b36; }
+  .bad { color: #ff6b81; font-weight: 700; }
+  .good { color: #5ee0a0; font-weight: 700; }
+  .test-ad { margin: 12px 0; padding: 18px; border-radius: 10px; background: #e6283c; color: #fff;
+             font-weight: 800; text-align: center; }
+  img { display: block; margin-top: 6px; max-width: 100%; }
+  a { color: #a78bfa; }
+</style>
+</head>
+<body>
+  <h1>Фикстура: реклама</h1>
+  <div class="row">Картинка /ads/: <span id="img">…</span><div id="imgbox"></div></div>
+  <div class="row">Обычная картинка: <span id="ok">…</span><div id="okbox"></div></div>
+  <div class="row">Блок .test-ad: <span id="css">…</span></div>
+  <div class="test-ad" id="cosm">РЕКЛАМНЫЙ БЛОК</div>
+  <p><a id="other" href="http://localhost:8765/ads.html">Открыть на localhost</a></p>
+<script>
+  // Страница сама сообщает, что заблокировано: заголовок «ADS img=… css=… ok=…».
+  const state = { img: 'pending', ok: 'pending', css: 'pending', loaded: false };
+  const host = location.hostname;
+
+  function show(id, text, good) {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.className = good ? 'good' : 'bad';
+  }
+
+  function update() {
+    if (state.img === 'pending' || state.ok === 'pending' || !state.loaded) return;
+    const cosm = document.getElementById('cosm');
+    state.css = getComputedStyle(cosm).display === 'none' ? 'hidden' : 'visible';
+    show('img', state.img === 'blocked' ? 'заблокирована' : 'загрузилась', state.img === 'blocked');
+    show('ok', state.ok === 'loaded' ? 'загрузилась' : 'не загрузилась', state.ok === 'loaded');
+    show('css', state.css === 'hidden' ? 'спрятан' : 'виден', state.css === 'hidden');
+    document.title = 'ADS img=' + state.img + ' css=' + state.css + ' ok=' + state.ok;
+  }
+
+  function probe(key, src, box) {
+    const img = new Image();
+    img.onload = () => { state[key] = 'loaded'; update(); };
+    img.onerror = () => { state[key] = 'blocked'; update(); };
+    img.src = src + '?t=' + Date.now();
+    document.getElementById(box).appendChild(img);
+  }
+
+  probe('img', '/ads/banner.png', 'imgbox');
+  probe('ok', '/img/ok.png', 'okbox');
+  window.addEventListener('load', () => setTimeout(() => { state.loaded = true; update(); }, 300));
+</script>
+</body>
+</html>
