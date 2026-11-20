@@ -111,7 +111,7 @@ final class GuardMessageHandler: NSObject, WKScriptMessageHandler {
             tab.blockedPopups += 1
             tab.notifyChanged()
         case "overlay" where isolated:
-            tab.hiddenElements += 1
+            tab.hiddenByGuard += 1
             tab.notifyChanged()
         default:
             break

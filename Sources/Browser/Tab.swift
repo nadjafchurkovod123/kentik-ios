@@ -27,7 +27,12 @@ final class Tab {
     // и модуль Blocking; UI читает через ShieldControlling.stats(for:).
     var blockedPopups = 0
     var blockedRedirects = 0
-    var hiddenElements = 0
+    /// Спрятано правилами блокировщика на текущей странице (оценка, пересчитывает Blocking).
+    var hiddenByRules = 0
+    /// Убрано защитой Guard (слои поверх плеера, стены «выключите AdBlock») за жизнь вкладки.
+    var hiddenByGuard = 0
+    /// Всего спрятанных элементов — то, что показывает шторка щита.
+    var hiddenElements: Int { hiddenByRules + hiddenByGuard }
 
     /// Текущий адрес страницы (nil — пустая вкладка, показываем домашний экран).
     var url: URL? { webView.url ?? requestedURL }

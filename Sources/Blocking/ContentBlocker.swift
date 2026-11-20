@@ -256,8 +256,8 @@ final class ContentBlocker {
     /// элементы с «рекламными» классами и id — это приближение.
     func pageDidFinishLoading(tab: Tab) {
         guard settings.isEnabled(forHost: tab.host), !ruleLists.isEmpty else {
-            if tab.hiddenElements != 0 {
-                tab.hiddenElements = 0
+            if tab.hiddenByRules != 0 {
+                tab.hiddenByRules = 0
                 tab.notifyChanged()
             }
             return
@@ -265,8 +265,8 @@ final class ContentBlocker {
         tab.webView.evaluateJavaScript(Self.hiddenEstimateScript) { [weak tab] value, _ in
             MainActor.assumeIsolated {
                 guard let tab, let count = value as? Int else { return }
-                if tab.hiddenElements != count {
-                    tab.hiddenElements = count
+                if tab.hiddenByRules != count {
+                    tab.hiddenByRules = count
                     tab.notifyChanged()
                 }
             }
