@@ -54,6 +54,8 @@ jobs:
       - name: Выбор симулятора
         run: |
           python3 scripts/ci/pick_simulator.py
+          # $GITHUB_ENV действует только со следующего шага — здесь читаем его сами.
+          SIM_UDID="$(grep '^SIM_UDID=' "$GITHUB_ENV" | tail -1 | cut -d= -f2)"
           xcrun simctl boot "$SIM_UDID" || true
           xcrun simctl bootstatus "$SIM_UDID" -b
 
@@ -94,7 +96,7 @@ jobs:
 
       - name: Артефакт screenshots
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: screenshots
           path: build/screenshots
@@ -102,7 +104,7 @@ jobs:
 
       - name: Артефакт xcresult (при падении)
         if: failure()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: xcresult
           path: |
@@ -131,7 +133,7 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist"
 
       - name: Артефакт ipa
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: ipa
           path: build/Kentik.ipa
