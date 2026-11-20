@@ -20,11 +20,32 @@
       "tintColor": "#A78BFA",
       "category": "utilities",
       "screenshots": [],
-      "versions": [],
+      "versions": [
+        {
+          "version": "1.0.0",
+          "buildVersion": "22",
+          "date": "2026-11-20T19:35:44Z",
+          "localizedDescription": "Kentik 1.0.0: блокировка рекламы, защита от всплывающих окон и перенаправлений, инкогнито.",
+          "downloadURL": "https://github.com/nadjafchurkovod123/kentik-ios/releases/download/v1.0.0/Kentik.ipa",
+          "size": 11544394,
+          "minOSVersion": "17.0"
+        }
+      ],
       "appPermissions": {
         "entitlements": [],
-        "privacy": {}
-      }
+        "privacy": {
+          "NSCameraUsageDescription": "Сайт просит доступ к камере. Kentik спросит разрешение для каждого сайта.",
+          "NSFaceIDUsageDescription": "Kentik использует Face ID, чтобы защитить вкладки инкогнито.",
+          "NSLocationWhenInUseUsageDescription": "Сайт просит вашу геопозицию. Kentik спросит разрешение для каждого сайта.",
+          "NSMicrophoneUsageDescription": "Сайт просит доступ к микрофону. Kentik спросит разрешение для каждого сайта.",
+          "NSPhotoLibraryAddUsageDescription": "Kentik сохраняет картинки в «Фото», когда вы об этом просите."
+        }
+      },
+      "version": "1.0.0",
+      "versionDate": "2026-11-20T19:35:44Z",
+      "versionDescription": "Kentik 1.0.0: блокировка рекламы, защита от всплывающих окон и перенаправлений, инкогнито.",
+      "downloadURL": "https://github.com/nadjafchurkovod123/kentik-ios/releases/download/v1.0.0/Kentik.ipa",
+      "size": 11544394
     }
   ],
   "news": []
