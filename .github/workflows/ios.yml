@@ -1,0 +1,146 @@
+name: iOS
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Сборка, тесты, IPA
+    runs-on: macos-26
+    timeout-minutes: 75
+    env:
+      FIXTURES_PORT: "8765"
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Выбор Xcode (новейший, с iOS 26 SDK)
+        run: |
+          echo "Установленные Xcode:"
+          XCODE="$(python3 scripts/ci/pick_xcode.py)"
+          echo "Выбран: $XCODE"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i -E "iphone|ios" || true
+
+      - name: Инструменты (XcodeGen, xcbeautify)
+        run: |
+          brew install xcodegen
+          command -v xcbeautify >/dev/null || brew install xcbeautify
+          xcodegen --version
+
+      # ─────────────────────────────────────────────────────────────────────────
+      # ЗАГЛУШКА: сборка списков фильтров (заполнит агент блокировщика).
+      # Здесь списки (EasyList, uBlock и т. п.) скачиваются и конвертируются в JSON
+      # WKContentRuleList, кладутся в Sources/Resources/Filters/ ДО xcodegen generate,
+      # чтобы попасть в бандл, а версия пишется в Info.plist (KentikFilterListsVersion).
+      # ─────────────────────────────────────────────────────────────────────────
+      - name: "ЗАГЛУШКА: сборка списков фильтров"
+        run: echo "Списки фильтров пока не собираются (каркас)."
+
+      - name: Генерация проекта
+        run: xcodegen generate
+
+      - name: Выбор симулятора
+        run: |
+          python3 scripts/ci/pick_simulator.py
+          xcrun simctl boot "$SIM_UDID" || true
+          xcrun simctl bootstatus "$SIM_UDID" -b
+
+      - name: Сервер фикстур (127.0.0.1:8765)
+        run: |
+          mkdir -p build
+          nohup python3 -m http.server "$FIXTURES_PORT" --bind 127.0.0.1 --directory tests/fixtures \
+            > build/fixtures-server.log 2>&1 &
+          for i in $(seq 1 20); do
+            curl -sf "http://127.0.0.1:$FIXTURES_PORT/hello.html" >/dev/null && break
+            sleep 0.5
+          done
+          curl -sf "http://127.0.0.1:$FIXTURES_PORT/hello.html" | head -5
+
+      - name: Сборка для тестов
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing \
+            -project Kentik.xcodeproj -scheme Kentik -configuration Debug \
+            -destination "id=$SIM_UDID" \
+            -derivedDataPath build/DerivedData \
+            | xcbeautify --renderer github-actions
+
+      - name: Тесты (unit + UI)
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -project Kentik.xcodeproj -scheme Kentik \
+            -destination "id=$SIM_UDID" \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/TestResults.xcresult \
+            -parallel-testing-enabled NO \
+            | xcbeautify --renderer github-actions
+
+      - name: Снимки экрана из .xcresult
+        if: always()
+        run: python3 scripts/ci/export_screenshots.py build/TestResults.xcresult build/screenshots
+
+      - name: Артефакт screenshots
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: screenshots
+          path: build/screenshots
+          if-no-files-found: warn
+
+      - name: Артефакт xcresult (при падении)
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: xcresult
+          path: |
+            build/TestResults.xcresult
+            build/fixtures-server.log
+          if-no-files-found: ignore
+
+      - name: Сборка для iPhone без подписи (Release)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Kentik.xcodeproj -scheme Kentik -configuration Release \
+            -sdk iphoneos -destination "generic/platform=iOS" \
+            -derivedDataPath build/DerivedDevice \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            | xcbeautify --renderer github-actions
+
+      - name: Упаковка Kentik.ipa
+        run: |
+          APP="build/DerivedDevice/Build/Products/Release-iphoneos/Kentik.app"
+          test -d "$APP"
+          rm -rf build/ipa && mkdir -p build/ipa/Payload
+          cp -R "$APP" build/ipa/Payload/
+          (cd build/ipa && zip -qry ../Kentik.ipa Payload)
+          ls -lh build/Kentik.ipa
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist"
+
+      - name: Артефакт ipa
+        uses: actions/upload-artifact@v5
+        with:
+          name: ipa
+          path: build/Kentik.ipa
+          if-no-files-found: error
+
+      # ─────────────────────────────────────────────────────────────────────────
+      # ЗАГЛУШКА: релиз по тегу v* (заполнит фаза Release): GitHub Release с Kentik.ipa
+      # и, при желании, источник AltStore (apps.json). Потребует permissions: contents: write.
+      # ─────────────────────────────────────────────────────────────────────────
+      - name: "ЗАГЛУШКА: релиз по тегу"
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "Релиз пока не публикуется (каркас). Тег $GITHUB_REF_NAME, IPA — в артефакте ipa."

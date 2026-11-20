@@ -1,0 +1,11 @@
+# Генерируется XcodeGen
+*.xcodeproj/
+*.xcworkspace/
+# Сборка
+build/
+DerivedData/
+*.xcresult
+*.ipa
+xcuserdata/
+.DS_Store
+__pycache__/
