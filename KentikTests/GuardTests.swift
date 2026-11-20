@@ -200,6 +200,12 @@ final class RedirectGuardTests: XCTestCase {
         // Форма на другой сайт после касания кнопки — тоже; вход через OAuth — можно.
         XCTAssertTrue(isCancel(guardUnderTest.evaluate(nav("https://fresh-ad.xyz/f", type: .formSubmitted), state: &state, now: now)))
         XCTAssertEqual(guardUnderTest.evaluate(nav("https://accounts.google.com/o/oauth2", type: .formSubmitted), state: &state, now: now), .allow)
+        // Форма POST (3-D Secure банка, вход SAML) — проходит, если это не рекламный хост.
+        var post = nav("https://acs.bank.example/3ds", type: .formSubmitted)
+        post.isPost = true
+        XCTAssertEqual(guardUnderTest.evaluate(post, state: &state, now: now), .allow)
+        post.url = URL(string: "https://go.popads.net/f")
+        XCTAssertTrue(isCancel(guardUnderTest.evaluate(post, state: &state, now: now)))
     }
 
     func testHijackedLinkToUnlistedSiteIsCancelled() {

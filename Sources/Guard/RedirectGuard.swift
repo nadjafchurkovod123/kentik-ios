@@ -16,7 +16,8 @@ import WebKit
 ///    за 15 секунд (петля).
 /// Пропускаются: адреса, открытые самим приложением (адресная строка, «Открыть»), серверные
 /// перенаправления (зеркала сайтов, сокращатели ссылок), переходы сразу после ссылки на
-/// другой сайт (страница «переход по внешней ссылке») и входы через OAuth.
+/// другой сайт (страница «переход по внешней ссылке»), формы POST (оплата 3-D Secure, вход
+/// SAML) и входы через OAuth.
 /// Если вернуть `.cancel`, Browser увеличит счётчик blockedRedirects вкладки.
 @MainActor
 final class RedirectGuard {
@@ -46,6 +47,8 @@ final class RedirectGuard {
         var incognito = false
         /// Серверное перенаправление (HTTP 3xx) уже идущей загрузки, а не новый переход.
         var isRedirect = false
+        /// Запрос POST (отправка формы с данными).
+        var isPost = false
     }
 
     enum Verdict: Equatable {
@@ -68,7 +71,8 @@ final class RedirectGuard {
             fromMainFrame: GuardFrames.sourceFrame(of: navigationAction)?.isMainFrame ?? true,
             pageURL: tab.webView.url,
             incognito: tab.isIncognito,
-            isRedirect: GuardFrames.isRedirect(navigationAction) ?? state.provisionalInProgress
+            isRedirect: GuardFrames.isRedirect(navigationAction) ?? state.provisionalInProgress,
+            isPost: navigationAction.request.httpMethod?.uppercased() == "POST"
         )
         guard request.targetsMainFrame else { return .allow }
 
@@ -141,6 +145,12 @@ final class RedirectGuard {
             return .cancel(reason: "iframe уводит вкладку на \(host ?? "")")
         }
         if request.isRedirect || followsTappedLink(request, url: url, state: state, now: now) {
+            return checkChain(url, state: &state, now: now)
+        }
+        // Форма POST главного фрейма на другой сайт — оплата картой (3-D Secure банка), вход
+        // SAML: такие формы страница отправляет сама. Рекламу так не открывают (её окна ловит
+        // PopupGuard), поэтому — как перенаправления, с проверкой цепочек.
+        if request.isPost, request.type == .formSubmitted || request.type == .formResubmitted {
             return checkChain(url, state: &state, now: now)
         }
         // Скрипт или форма страницы уводит вкладку на другой сайт (касание плеера, таймер,
