@@ -25,6 +25,10 @@ protocol ShieldControlling: AnyObject {
     /// Включён ли щит для хоста (nil — просто глобальное состояние).
     func isEnabled(forHost host: String?) -> Bool
     func setEnabled(_ enabled: Bool, forHost host: String)
+    /// То же для вкладки: в инкогнито выключатель сайта временный (только в памяти,
+    /// стирается вместе с сессией инкогнито).
+    func isEnabled(forHost host: String?, incognito: Bool) -> Bool
+    func setEnabled(_ enabled: Bool, forHost host: String, incognito: Bool)
     func stats(for tab: Tab) -> ShieldStats
     /// Перекомпилировать правила (например, после обновления списков).
     func reloadRules(completion: @escaping @MainActor (Error?) -> Void)

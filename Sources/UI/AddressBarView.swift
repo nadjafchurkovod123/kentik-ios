@@ -42,6 +42,10 @@ final class AddressBarView: UIView {
     let shieldButton = UIButton(type: .system)
     let cancelButton = UIButton(type: .system)
     private let iconView = UIImageView()
+    /// Значок безопасности (замок / предупреждение) рядом с меткой инкогнито.
+    private let securityIcon = UIImageView()
+    private var securityWidth: NSLayoutConstraint!
+    private var securitySpacing: NSLayoutConstraint!
     private let shieldBadge = UILabel()
 
     private var editingConstraints: [NSLayoutConstraint] = []
@@ -89,6 +93,9 @@ final class AddressBarView: UIView {
         iconView.contentMode = .scaleAspectFit
         iconView.tintColor = Theme.dim
         iconView.preferredSymbolConfiguration = .init(pointSize: 14, weight: .semibold)
+        securityIcon.contentMode = .scaleAspectFit
+        securityIcon.preferredSymbolConfiguration = .init(pointSize: 11, weight: .semibold)
+        securityIcon.isHidden = true
 
         reloadButton.setImage(UIImage(systemName: "arrow.clockwise"), for: .normal)
         reloadButton.tintColor = Theme.dim
@@ -127,9 +134,11 @@ final class AddressBarView: UIView {
         addSubview(shieldButton)
         addSubview(cancelButton)
         shieldButton.addSubview(shieldBadge)
-        [iconView, titleLabel, textField, reloadButton, progressView].forEach { pill.addSubview($0) }
-        [pill, shieldButton, cancelButton, shieldBadge, iconView, titleLabel, textField, reloadButton, progressView]
+        [iconView, securityIcon, titleLabel, textField, reloadButton, progressView].forEach { pill.addSubview($0) }
+        [pill, shieldButton, cancelButton, shieldBadge, iconView, securityIcon, titleLabel, textField, reloadButton, progressView]
             .forEach { $0.translatesAutoresizingMaskIntoConstraints = false }
+        securityWidth = securityIcon.widthAnchor.constraint(equalToConstant: 0)
+        securitySpacing = securityIcon.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 0)
 
         cancelButton.setContentHuggingPriority(.required, for: .horizontal)
         cancelButton.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -168,7 +177,11 @@ final class AddressBarView: UIView {
             reloadButton.bottomAnchor.constraint(equalTo: pill.bottomAnchor),
             reloadButton.widthAnchor.constraint(equalToConstant: 42),
 
-            textField.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 8),
+            securitySpacing,
+            securityWidth,
+            securityIcon.centerYAnchor.constraint(equalTo: pill.centerYAnchor),
+            securityIcon.heightAnchor.constraint(equalToConstant: 14),
+            textField.leadingAnchor.constraint(equalTo: securityIcon.trailingAnchor, constant: 8),
             textField.trailingAnchor.constraint(equalTo: reloadButton.leadingAnchor, constant: -2),
 
             titleLabel.topAnchor.constraint(equalTo: pill.topAnchor, constant: 5),
@@ -233,18 +246,33 @@ final class AddressBarView: UIView {
         titleLabel.text = title
         let symbol: String
         var tint = Theme.dim
+        // В инкогнито метка «глаз» стоит всегда, а замок / предупреждение http — рядом с ней.
+        var security: (symbol: String, tint: UIColor)?
+        let https = url?.scheme?.lowercased() == "https"
         if isEditingAddress || url == nil {
             symbol = incognito ? "eye.slash" : "magnifyingglass"
             if incognito { tint = Theme.violet }
-        } else if url?.scheme?.lowercased() == "https" {
-            symbol = incognito ? "eye.slash" : "lock.fill"
-            if incognito { tint = Theme.violet }
+        } else if incognito {
+            symbol = "eye.slash"
+            tint = Theme.violet
+            security = https ? ("lock.fill", Theme.dim) : ("exclamationmark.triangle.fill", Theme.warn)
+        } else if https {
+            symbol = "lock.fill"
         } else {
             symbol = "exclamationmark.triangle.fill"
             tint = Theme.warn
         }
         iconView.image = UIImage(systemName: symbol)
         iconView.tintColor = tint
+        iconView.isAccessibilityElement = incognito
+        iconView.accessibilityLabel = incognito ? "Инкогнито" : nil
+        securityIcon.image = security.flatMap { UIImage(systemName: $0.symbol) }
+        securityIcon.tintColor = security?.tint
+        securityIcon.isHidden = security == nil
+        securityIcon.isAccessibilityElement = security != nil
+        securityIcon.accessibilityLabel = security == nil ? nil : (https ? "Защищённое соединение" : "Незащищённое соединение")
+        securityWidth.constant = security == nil ? 0 : 13
+        securitySpacing.constant = security == nil ? 0 : 4
         applyLayout()
     }
 

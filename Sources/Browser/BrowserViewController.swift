@@ -140,6 +140,12 @@ final class BrowserViewController: UIViewController {
         tabManager.selectedTab?.reloadAfterCrashIfNeeded()
     }
 
+    /// Инкогнито заперто Face ID, и на экране вкладка инкогнито: ничего из неё не показываем
+    /// (адрес, заголовок, история «назад/вперёд», шторки) и не даём ею пользоваться.
+    private var isIncognitoLocked: Bool {
+        (tabManager.selectedTab?.isIncognito ?? false) && IncognitoLock.shared.isLocked
+    }
+
     /// Вернулись из фона: если инкогнито заперто и на экране — спросить Face ID.
     func unlockIfNeeded() {
         guard IncognitoLock.shared.isLocked, isShowingIncognitoContent, !IncognitoLock.shared.isAuthenticating else { return }
@@ -292,7 +298,8 @@ final class BrowserViewController: UIViewController {
     private func mainMenuElements() -> [UIMenuElement] {
         let tab = tabManager.selectedTab
         let incognito = tab?.isIncognito ?? false
-        let pageURL = tab?.url
+        // Запертое инкогнито: действия со страницей (поделиться, копировать, чтение) недоступны.
+        let pageURL = isIncognitoLocked ? nil : tab?.url
         let hasPage = pageURL != nil
 
         let newTab = incognito
@@ -395,11 +402,18 @@ final class BrowserViewController: UIViewController {
 
     // MARK: - Действия
 
-    @objc private func goBack() { tabManager.selectedTab?.goBack() }
-    @objc private func goForward() { tabManager.selectedTab?.goForward() }
+    @objc private func goBack() {
+        guard !isIncognitoLocked else { return }
+        tabManager.selectedTab?.goBack()
+    }
+
+    @objc private func goForward() {
+        guard !isIncognitoLocked else { return }
+        tabManager.selectedTab?.goForward()
+    }
 
     @objc private func reloadOrStop() {
-        guard let tab = tabManager.selectedTab else { return }
+        guard let tab = tabManager.selectedTab, !isIncognitoLocked else { return }
         if tab.isLoading { tab.stopLoading() } else { tab.reload() }
     }
 
@@ -413,6 +427,7 @@ final class BrowserViewController: UIViewController {
     }
 
     func focusAddressBar() {
+        guard !isIncognitoLocked else { return }
         addressBar.textField.becomeFirstResponder()
     }
 
@@ -474,7 +489,7 @@ final class BrowserViewController: UIViewController {
     }
 
     private func openReader() {
-        guard let tab = tabManager.selectedTab, tab.url != nil else { return }
+        guard let tab = tabManager.selectedTab, tab.url != nil, !isIncognitoLocked else { return }
         ReaderExtractor.extract(from: tab.webView) { [weak self] article in
             guard let self else { return }
             guard let article else {
@@ -494,6 +509,7 @@ final class BrowserViewController: UIViewController {
     // MARK: - Экраны
 
     @objc private func presentShield() {
+        guard !isIncognitoLocked else { return }
         let sheet = ShieldSheetViewController(shield: shield, tab: tabManager.selectedTab)
         sheet.onOpenSettings = { [weak self] in self?.presentSettings() }
         shieldSheet = sheet
@@ -586,7 +602,14 @@ final class BrowserViewController: UIViewController {
     }
 
     @objc private func lockChanged() {
+        if IncognitoLock.shared.isLocked, isShowingIncognitoContent {
+            // Запираем: убрать всё, что показывает инкогнито поверх страницы (чтение, щит,
+            // вкладки), и ввод адреса — замок закрывает только область страницы.
+            if addressBar.textField.isFirstResponder { addressBar.textField.resignFirstResponder() }
+            if presentedViewController != nil { dismiss(animated: false) }
+        }
         updateLockOverlay(autoPrompt: false)
+        updateChrome()
     }
 
     // MARK: - Показ вкладки
@@ -654,7 +677,7 @@ final class BrowserViewController: UIViewController {
 
     private func shieldState(for tab: Tab?) -> ShieldState {
         guard shield.isEnabledGlobally else { return .off }
-        return shield.isEnabled(forHost: tab?.host) ? .on : .siteOff
+        return shield.isEnabled(forHost: tab?.host, incognito: tab?.isIncognito ?? false) ? .on : .siteOff
     }
 
     private func updateChrome() {
@@ -686,18 +709,22 @@ final class BrowserViewController: UIViewController {
             setNeedsStatusBarAppearanceUpdate()
         }
 
+        // Запертое инкогнито: ни адреса, ни заголовка, ни истории «назад/вперёд».
+        let locked = isIncognitoLocked
         addressBar.applyPalette(palette, incognito: incognito)
-        addressBar.update(url: tab?.displayURL, title: tab?.title ?? "", incognito: incognito)
-        addressBar.setLoading(loading, progress: tab?.progress ?? 0)
+        addressBar.update(url: locked ? nil : tab?.displayURL, title: locked ? "" : (tab?.title ?? ""), incognito: incognito)
+        addressBar.setLoading(loading && !locked, progress: tab?.progress ?? 0)
         var blocked = 0
-        if let tab {
+        if let tab, !locked {
             let stats = shield.stats(for: tab)
             blocked = stats.blockedPopups + stats.blockedRedirects
         }
         addressBar.setShield(shieldState(for: tab), blocked: blocked)
+        addressBar.shieldButton.isEnabled = !locked
+        addressPan.isEnabled = !locked
 
-        toolbarView.backButton.isEnabled = tab?.canGoBack ?? false
-        toolbarView.forwardButton.isEnabled = tab?.canGoForward ?? false
+        toolbarView.backButton.isEnabled = !locked && (tab?.canGoBack ?? false)
+        toolbarView.forwardButton.isEnabled = !locked && (tab?.canGoForward ?? false)
         toolbarView.setTint(Theme.text, incognito: incognito)
         toolbarView.setTabCount(incognito ? tabManager.incognitoTabs.count : tabManager.normalTabs.count)
 
@@ -892,7 +919,8 @@ extension BrowserViewController: BrowserUIHost {
     }
 
     func presentDialog(_ dialog: JSDialog, origin: String, tab: Tab) {
-        guard !dialogsMuted.contains(tab.id), presentedViewController == nil else {
+        let locked = tab.isIncognito && IncognitoLock.shared.isLocked
+        guard !dialogsMuted.contains(tab.id), presentedViewController == nil, !locked else {
             dialog.dismissSilently()
             return
         }
@@ -935,6 +963,11 @@ extension BrowserViewController: BrowserUIHost {
 // MARK: - UITextFieldDelegate
 
 extension BrowserViewController: UITextFieldDelegate {
+    func textFieldShouldBeginEditing(_ textField: UITextField) -> Bool {
+        // В запертом инкогнито адрес не показываем и не вводим.
+        !isIncognitoLocked
+    }
+
     func textFieldDidBeginEditing(_ textField: UITextField) {
         if let url = tabManager.selectedTab?.url, url.absoluteString != "about:blank" {
             textField.text = url.absoluteString
@@ -962,7 +995,7 @@ extension BrowserViewController: UITextFieldDelegate {
 extension BrowserViewController: UIGestureRecognizerDelegate {
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard gestureRecognizer === addressPan else { return true }
-        guard !addressBar.isEditingAddress else { return false }
+        guard !addressBar.isEditingAddress, !isIncognitoLocked else { return false }
         let v = addressPan.velocity(in: view)
         return abs(v.x) > abs(v.y) * 1.2
     }

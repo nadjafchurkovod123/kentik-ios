@@ -2,7 +2,9 @@ import Foundation
 
 /// Хранимые настройки щита: общий выключатель и список сайтов, где щит выключен.
 /// Сайт = регистрируемый домен (приближение eTLD+1, см. DomainMatcher): выключение на
-/// «kinogo.ru» действует и на «m.kinogo.ru». Вкладки инкогнито используют те же настройки.
+/// «kinogo.ru» действует и на «m.kinogo.ru». Вкладки инкогнито видят постоянные настройки,
+/// но их собственные выключатели сайтов живут только в памяти (`incognitoOverrides`) и
+/// стираются вместе с сессией инкогнито — на диске и в настройках от инкогнито следа нет.
 @MainActor
 final class BlockingSettings {
 
@@ -33,10 +35,20 @@ final class BlockingSettings {
         set { defaults.set(newValue.sorted(), forKey: Key.disabledHosts) }
     }
 
+    /// Выключатели сайтов из вкладок инкогнито: сайт → включён ли щит. Только в памяти.
+    private(set) var incognitoOverrides: [String: Bool] = [:]
+
     func isEnabled(forHost host: String?) -> Bool {
+        isEnabled(forHost: host, incognito: false)
+    }
+
+    /// Включён ли щит на сайте для вкладки (инкогнито учитывает свои временные выключатели).
+    func isEnabled(forHost host: String?, incognito: Bool) -> Bool {
         guard isEnabledGlobally else { return false }
         guard let host, !host.isEmpty else { return true }
-        return !disabledHosts.contains(Self.normalize(host))
+        let key = Self.normalize(host)
+        if incognito, let override = incognitoOverrides[key] { return override }
+        return !disabledHosts.contains(key)
     }
 
     func setEnabled(_ enabled: Bool, forHost host: String) {
@@ -45,6 +57,28 @@ final class BlockingSettings {
         var hosts = disabledHosts
         if enabled { hosts.remove(key) } else { hosts.insert(key) }
         disabledHosts = hosts
+    }
+
+    /// Выключатель из вкладки: в инкогнито — только до конца сессии инкогнито.
+    func setEnabled(_ enabled: Bool, forHost host: String, incognito: Bool) {
+        guard incognito else { return setEnabled(enabled, forHost: host) }
+        let key = Self.normalize(host)
+        guard !key.isEmpty else { return }
+        incognitoOverrides[key] = enabled
+    }
+
+    /// Сайты, где щит выключен, — для вкладок инкогнито (постоянные с учётом временных).
+    var incognitoDisabledHosts: Set<String> {
+        var hosts = disabledHosts
+        for (host, enabled) in incognitoOverrides {
+            if enabled { hosts.remove(host) } else { hosts.insert(host) }
+        }
+        return hosts
+    }
+
+    /// Сессия инкогнито закончилась — забыть её выключатели.
+    func resetIncognitoOverrides() {
+        incognitoOverrides.removeAll()
     }
 
     /// "WWW.M.Example.com" → "example.com" (регистрируемый домен).

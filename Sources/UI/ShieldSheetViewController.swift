@@ -163,7 +163,7 @@ final class ShieldSheetViewController: UIViewController {
     @objc func refresh() {
         guard isViewLoaded else { return }
         let global = shield.isEnabledGlobally
-        let site = shield.isEnabled(forHost: host)
+        let site = shield.isEnabled(forHost: host, incognito: incognito)
         let hostText = displayHost(host)
         let state: ShieldState = !global ? .off : (site ? .on : .siteOff)
 
@@ -178,7 +178,8 @@ final class ShieldSheetViewController: UIViewController {
         globalSwitch.setOn(global, animated: true)
         siteSwitch.setOn(global && site, animated: true)
         siteSwitch.isEnabled = global && !hostText.isEmpty
-        siteSubtitle.text = hostText.isEmpty ? "Откройте сайт" : hostText
+        // В инкогнито выключатель сайта временный — так и пишем.
+        siteSubtitle.text = hostText.isEmpty ? "Откройте сайт" : (incognito ? "\(hostText) · до закрытия инкогнито" : hostText)
         siteTitle.alpha = siteSwitch.isEnabled ? 1 : 0.5
 
         if let tab = currentTab {
@@ -204,7 +205,7 @@ final class ShieldSheetViewController: UIViewController {
     @objc private func siteChanged() {
         guard let host else { return }
         UISelectionFeedbackGenerator().selectionChanged()
-        shield.setEnabled(siteSwitch.isOn, forHost: host)
+        shield.setEnabled(siteSwitch.isOn, forHost: host, incognito: incognito)
         refresh()
     }
 

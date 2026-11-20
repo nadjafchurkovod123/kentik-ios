@@ -34,9 +34,13 @@ final class PopupGuard {
         var fromMainFrame: Bool
         /// Хост страницы во вкладке — по нему проверяется выключатель щита на сайте.
         var pageHost: String?
+        /// Вкладка инкогнито (у неё свои временные выключатели сайтов).
+        var incognito = false
     }
 
-    var isShieldEnabled: @MainActor (String?) -> Bool = { ShieldController.shared.isEnabled(forHost: $0) }
+    var isShieldEnabled: @MainActor (_ host: String?, _ incognito: Bool) -> Bool = {
+        ShieldController.shared.isEnabled(forHost: $0, incognito: $1)
+    }
     var adHosts: AdHosts = .shared
 
     func decide(
@@ -49,7 +53,8 @@ final class PopupGuard {
             url: navigationAction.request.url,
             isLinkActivation: navigationAction.navigationType == .linkActivated,
             fromMainFrame: GuardFrames.sourceFrame(of: navigationAction)?.isMainFrame ?? true,
-            pageHost: tab.host
+            pageHost: tab.host,
+            incognito: tab.isIncognito
         )
         let decision = evaluate(request, state: GuardState.shared.state(for: tab), now: Date())
         if case .block = decision {
@@ -60,7 +65,7 @@ final class PopupGuard {
 
     /// Чистое решение по описанию окна и состоянию вкладки.
     func evaluate(_ request: Request, state: TabGuardState, now: Date) -> PopupDecision {
-        guard isShieldEnabled(request.pageHost) else { return .allowNewTab(background: false) }
+        guard isShieldEnabled(request.pageHost, request.incognito) else { return .allowNewTab(background: false) }
 
         let host = request.url?.host
         if LoginHosts.contains(host) {

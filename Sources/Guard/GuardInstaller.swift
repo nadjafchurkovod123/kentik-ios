@@ -20,14 +20,17 @@ enum GuardInstaller {
     static let pageHandlerName = "kentikPopup"
 
     private static let controllers = NSHashTable<WKUserContentController>.weakObjects()
+    /// Контроллеры вкладок инкогнито: у них свой список сайтов-исключений (временные
+    /// выключатели инкогнито).
+    private static let incognitoControllers = NSHashTable<WKUserContentController>.weakObjects()
     private static var observer: NSObjectProtocol?
-    private static var cached: (config: Scriptlets.Config, scripts: [WKUserScript])?
+    private static var cached: [Bool: (config: Scriptlets.Config, scripts: [WKUserScript])] = [:]
 
-    /// Откуда брать настройки щита (в тестах подменяется).
-    static var settingsProvider: @MainActor () -> Scriptlets.Config = {
+    /// Откуда брать настройки щита (в тестах подменяется); аргумент — вкладка инкогнито.
+    static var settingsProvider: @MainActor (_ incognito: Bool) -> Scriptlets.Config = { incognito in
         let settings = BlockingSettings.shared
-        return Scriptlets.Config(enabled: settings.isEnabledGlobally,
-                                 disabledHosts: settings.disabledHosts.sorted())
+        let hosts = incognito ? settings.incognitoDisabledHosts : settings.disabledHosts
+        return Scriptlets.Config(enabled: settings.isEnabledGlobally, disabledHosts: hosts.sorted())
     }
 
     static func install(on configuration: WKWebViewConfiguration, tab: Tab) {
@@ -35,37 +38,40 @@ enum GuardInstaller {
         prepareOnce()
 
         let controller = configuration.userContentController
-        guard !controllers.contains(controller) else { return }
-        controllers.add(controller)
+        guard !controllers.contains(controller), !incognitoControllers.contains(controller) else { return }
+        let incognito = tab.isIncognito
+        (incognito ? incognitoControllers : controllers).add(controller)
 
         let handler = GuardMessageHandler(tab: tab)
         controller.add(handler, contentWorld: world, name: isolatedHandlerName)
         controller.add(handler, contentWorld: .page, name: pageHandlerName)
-        currentScripts().forEach(controller.addUserScript)
+        currentScripts(incognito: incognito).forEach(controller.addUserScript)
     }
 
     /// Пересобрать скриплеты во всех живых веб-вью (после смены настроек щита).
     static func refreshScripts() {
-        let scripts = currentScripts()
-        for controller in controllers.allObjects {
-            let others = controller.userScripts.filter { !$0.source.hasPrefix(Scriptlets.marker) }
-            controller.removeAllUserScripts()
-            others.forEach(controller.addUserScript)
-            scripts.forEach(controller.addUserScript)
+        for incognito in [false, true] {
+            let scripts = currentScripts(incognito: incognito)
+            for controller in (incognito ? incognitoControllers : controllers).allObjects {
+                let others = controller.userScripts.filter { !$0.source.hasPrefix(Scriptlets.marker) }
+                controller.removeAllUserScripts()
+                others.forEach(controller.addUserScript)
+                scripts.forEach(controller.addUserScript)
+            }
         }
     }
 
     /// Скриплеты для текущих настроек (кэшируются, пока настройки не меняются).
-    static func currentScripts() -> [WKUserScript] {
-        let config = settingsProvider()
-        if let cached, cached.config == config { return cached.scripts }
+    static func currentScripts(incognito: Bool = false) -> [WKUserScript] {
+        let config = settingsProvider(incognito)
+        if let cached = cached[incognito], cached.config == config { return cached.scripts }
         let scripts = [
             WKUserScript(source: Scriptlets.pageSource(config), injectionTime: .atDocumentStart,
                          forMainFrameOnly: false, in: .page),
             WKUserScript(source: Scriptlets.isolatedSource(config), injectionTime: .atDocumentStart,
                          forMainFrameOnly: false, in: world),
         ]
-        cached = (config, scripts)
+        cached[incognito] = (config, scripts)
         return scripts
     }
 

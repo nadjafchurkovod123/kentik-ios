@@ -22,6 +22,8 @@ enum WebViewFactory {
     /// Забыть хранилище инкогнито: куки, кэш и прочее исчезают вместе с ним.
     static func resetIncognitoSession() {
         incognitoStore = nil
+        // Выключатели щита, сделанные в инкогнито, уходят вместе с сессией.
+        BlockingSettings.shared.resetIncognitoOverrides()
     }
 
     /// Создаёт веб-вью для вкладки.

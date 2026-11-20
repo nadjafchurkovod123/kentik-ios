@@ -203,19 +203,20 @@ final class ContentBlocker {
     ///   - host: хост, если известен заранее (nil — по общему выключателю).
     ///   - incognito: вкладка инкогнито (настройки щита общие, правила те же).
     func install(on controller: WKUserContentController, host: String?, incognito: Bool) {
-        sync(controller, host: host)
+        sync(controller, host: host, incognito: incognito)
     }
 
     /// Вызывать перед навигацией главного фрейма (до decisionHandler(.allow)): ставит или
     /// снимает наши списки по настройкам сайта, куда идём. Сообщения WebKit в процесс страницы
     /// упорядочены, поэтому правила успевают примениться к этой загрузке и её iframe.
     func prepareNavigation(of webView: WKWebView, to url: URL?) {
-        sync(webView.configuration.userContentController, host: url?.host)
+        let incognito = !webView.configuration.websiteDataStore.isPersistent
+        sync(webView.configuration.userContentController, host: url?.host, incognito: incognito)
     }
 
     /// Какие списки должны стоять для хоста.
-    func desiredLists(forHost host: String?) -> [WKContentRuleList] {
-        settings.isEnabled(forHost: host) ? ruleLists : []
+    func desiredLists(forHost host: String?, incognito: Bool = false) -> [WKContentRuleList] {
+        settings.isEnabled(forHost: host, incognito: incognito) ? ruleLists : []
     }
 
     /// Наши списки, которые сейчас стоят на контроллере (для тестов и статистики).
@@ -223,8 +224,8 @@ final class ContentBlocker {
         installed.object(forKey: controller)?.lists ?? []
     }
 
-    func sync(_ controller: WKUserContentController, host: String?) {
-        let desired = desiredLists(forHost: host)
+    func sync(_ controller: WKUserContentController, host: String?, incognito: Bool = false) {
+        let desired = desiredLists(forHost: host, incognito: incognito)
         let state = installed.object(forKey: controller) ?? InstalledLists()
         let current = state.lists
         if current.count == desired.count && zip(current, desired).allSatisfy({ $0 === $1 }) {
@@ -255,7 +256,7 @@ final class ContentBlocker {
     /// WebKit не сообщает о срабатываниях правил, поэтому считаем скрытые (display: none)
     /// элементы с «рекламными» классами и id — это приближение.
     func pageDidFinishLoading(tab: Tab) {
-        guard settings.isEnabled(forHost: tab.host), !ruleLists.isEmpty else {
+        guard settings.isEnabled(forHost: tab.host, incognito: tab.isIncognito), !ruleLists.isEmpty else {
             if tab.hiddenByRules != 0 {
                 tab.hiddenByRules = 0
                 tab.notifyChanged()

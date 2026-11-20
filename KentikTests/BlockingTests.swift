@@ -157,6 +157,32 @@ final class ShieldTogglesTests: XCTestCase {
         XCTAssertTrue(settings.isEnabled(forHost: "kinogo.ru"))
     }
 
+    /// Выключатель сайта из инкогнито живёт только в памяти: в UserDefaults и в списке
+    /// настроек его нет, обычные вкладки его не видят, после конца сессии он забыт.
+    func testIncognitoSiteToggleIsNotPersisted() {
+        let suite = "KentikTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let settings = BlockingSettings(defaults: defaults)
+        settings.setEnabled(false, forHost: "m.kinogo.ru", incognito: true)
+        XCTAssertFalse(settings.isEnabled(forHost: "kinogo.ru", incognito: true))
+        XCTAssertTrue(settings.isEnabled(forHost: "kinogo.ru", incognito: false), "обычные вкладки не затронуты")
+        XCTAssertTrue(settings.disabledHosts.isEmpty, "в постоянных настройках следа нет")
+        XCTAssertNil(defaults.object(forKey: "shield.disabledHosts"))
+        XCTAssertEqual(settings.incognitoDisabledHosts, ["kinogo.ru"])
+
+        // Постоянно выключенный сайт можно временно включить в инкогнито.
+        settings.setEnabled(false, forHost: "serial.example", incognito: false)
+        settings.setEnabled(true, forHost: "serial.example", incognito: true)
+        XCTAssertTrue(settings.isEnabled(forHost: "serial.example", incognito: true))
+        XCTAssertFalse(settings.isEnabled(forHost: "serial.example", incognito: false))
+        XCTAssertEqual(settings.disabledHosts, ["serial.example"])
+
+        settings.resetIncognitoOverrides()
+        XCTAssertTrue(settings.isEnabled(forHost: "kinogo.ru", incognito: true))
+        XCTAssertFalse(settings.isEnabled(forHost: "serial.example", incognito: true))
+        UserDefaults().removePersistentDomain(forName: suite)
+    }
+
     func testSyncInstallsAndRemovesListsPerSite() async throws {
         let list = try await compileTestList()
         let settings = makeSettings()

@@ -33,6 +33,8 @@ final class RedirectGuard {
         var fromMainFrame: Bool
         /// Текущий адрес вкладки (откуда уходим).
         var pageURL: URL?
+        /// Вкладка инкогнито (у неё свои временные выключатели сайтов).
+        var incognito = false
     }
 
     enum Verdict: Equatable {
@@ -40,7 +42,9 @@ final class RedirectGuard {
         case cancel(reason: String)
     }
 
-    var isShieldEnabled: @MainActor (String?) -> Bool = { ShieldController.shared.isEnabled(forHost: $0) }
+    var isShieldEnabled: @MainActor (_ host: String?, _ incognito: Bool) -> Bool = {
+        ShieldController.shared.isEnabled(forHost: $0, incognito: $1)
+    }
     var adHosts: AdHosts = .shared
 
     func decide(navigationAction: WKNavigationAction, tab: Tab) -> WKNavigationActionPolicy {
@@ -50,7 +54,8 @@ final class RedirectGuard {
             type: navigationAction.navigationType,
             targetsMainFrame: target?.isMainFrame ?? false,
             fromMainFrame: GuardFrames.sourceFrame(of: navigationAction)?.isMainFrame ?? true,
-            pageURL: tab.webView.url
+            pageURL: tab.webView.url,
+            incognito: tab.isIncognito
         )
         guard request.targetsMainFrame else { return .allow }
 
@@ -79,7 +84,7 @@ final class RedirectGuard {
     func evaluate(_ request: Request, state: inout TabGuardState, now: Date) -> Verdict {
         guard request.targetsMainFrame, let url = request.url else { return .allow }
         let pageHost = request.pageURL?.host
-        guard isShieldEnabled(pageHost) else { return .allow }
+        guard isShieldEnabled(pageHost, request.incognito) else { return .allow }
 
         let scheme = url.scheme?.lowercased() ?? ""
         guard scheme == "http" || scheme == "https" else { return .allow }

@@ -60,7 +60,7 @@ final class PopupGuardTests: XCTestCase {
         super.setUp()
         guardUnderTest = PopupGuard()
         shieldOn = true
-        guardUnderTest.isShieldEnabled = { [unowned self] _ in self.shieldOn }
+        guardUnderTest.isShieldEnabled = { [unowned self] _, _ in self.shieldOn }
         guardUnderTest.adHosts = AdHosts(hosts: ["popads.net"])
     }
 
@@ -160,7 +160,7 @@ final class RedirectGuardTests: XCTestCase {
         super.setUp()
         guardUnderTest = RedirectGuard()
         shieldOn = true
-        guardUnderTest.isShieldEnabled = { [unowned self] _ in self.shieldOn }
+        guardUnderTest.isShieldEnabled = { [unowned self] _, _ in self.shieldOn }
         guardUnderTest.adHosts = AdHosts(hosts: ["popads.net", "adsterra.com"])
     }
 
@@ -288,7 +288,7 @@ final class RedirectGuardTests: XCTestCase {
 @MainActor
 final class GuardInstallerTests: XCTestCase {
 
-    private var savedProvider: (@MainActor () -> Scriptlets.Config)!
+    private var savedProvider: (@MainActor (Bool) -> Scriptlets.Config)!
 
     override func setUp() {
         super.setUp()
@@ -332,7 +332,7 @@ final class GuardInstallerTests: XCTestCase {
         let foreign = WKUserScript(source: "/* другой модуль */", injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         controller.addUserScript(foreign)
 
-        GuardInstaller.settingsProvider = { Scriptlets.Config(enabled: true, disabledHosts: ["serial.example"]) }
+        GuardInstaller.settingsProvider = { _ in Scriptlets.Config(enabled: true, disabledHosts: ["serial.example"]) }
         GuardInstaller.refreshScripts()
 
         let scripts = guardScripts(tab)
@@ -361,7 +361,7 @@ final class GuardInstallerTests: XCTestCase {
     }
 
     func testScriptletIsOffOnDisabledSite() async throws {
-        GuardInstaller.settingsProvider = { Scriptlets.Config(enabled: true, disabledHosts: ["kentik.test"]) }
+        GuardInstaller.settingsProvider = { _ in Scriptlets.Config(enabled: true, disabledHosts: ["kentik.test"]) }
         let tab = Tab(isIncognito: true)
         try await load(tab, host: "kentik.test")
         let untouched = try await tab.webView.evaluateJavaScript(

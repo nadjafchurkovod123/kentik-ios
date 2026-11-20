@@ -31,6 +31,15 @@ final class ShieldController: ShieldControlling {
         notify()
     }
 
+    func isEnabled(forHost host: String?, incognito: Bool) -> Bool {
+        settings.isEnabled(forHost: host, incognito: incognito)
+    }
+
+    func setEnabled(_ enabled: Bool, forHost host: String, incognito: Bool) {
+        settings.setEnabled(enabled, forHost: host, incognito: incognito)
+        notify()
+    }
+
     func stats(for tab: Tab) -> ShieldStats {
         ShieldStats(
             blockedPopups: tab.blockedPopups,
