@@ -9,6 +9,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
         TestHooks.prepareFreshStateIfNeeded()
+        AppSettings.shared.applySearchEngine()
         return true
     }
 

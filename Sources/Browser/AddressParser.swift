@@ -3,8 +3,10 @@ import Foundation
 /// Разбирает ввод адресной строки: адрес сайта или поисковый запрос.
 enum AddressParser {
 
-    /// Поисковик по умолчанию — Google.
+    /// Поисковик по умолчанию — Google. Настройки меняют его через AppSettings.applySearchEngine().
     static var searchBase = "https://www.google.com/search"
+    /// Имя параметра запроса (у Яндекса — "text").
+    static var searchQueryName = "q"
 
     /// Схемы, которые открываем как есть.
     private static let directSchemes: Set<String> = ["http", "https", "about", "data", "blob", "file"]
@@ -38,7 +40,7 @@ enum AddressParser {
         var allowed = CharacterSet.urlQueryAllowed
         allowed.remove(charactersIn: "+&=?#/")
         guard let encoded = query.addingPercentEncoding(withAllowedCharacters: allowed) else { return nil }
-        return URL(string: searchBase + "?q=" + encoded)
+        return URL(string: searchBase + "?" + searchQueryName + "=" + encoded)
     }
 
     // MARK: - Разбор хоста

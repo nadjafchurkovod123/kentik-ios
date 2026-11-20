@@ -39,6 +39,8 @@ enum WebViewFactory {
                 : WKWebsiteDataStore.default()
             configuration.allowsInlineMediaPlayback = true
             configuration.allowsPictureInPictureMediaPlayback = true
+            // Полноэкранный режим для плееров (Fullscreen API) — нужен сайтам с сериалами.
+            configuration.preferences.isElementFullscreenEnabled = true
             configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
             configuration.defaultWebpagePreferences.preferredContentMode = .mobile
 
