@@ -1,11 +1,13 @@
 import Foundation
 
-/// Набор рекламных, попандерных и вредоносных хостов (Resources/ad_hosts.json).
+/// Набор рекламных, попандерных и вредоносных хостов.
 ///
 /// Файл собирает CI (scripts/ci/build_ad_hosts.py) из Peter Lowe, AdGuard DNS filter,
-/// EasyList popup и uBlock Origin badware. Формат общий с блокировщиком рекламы:
-/// `{"version": "...", "hosts": ["example.com", ...]}`; хост в наборе значит «сам хост
-/// и все его поддомены». Если файла нет, работает маленький встроенный набор `seed`.
+/// EasyList popup и uBlock Origin badware: встроенный (Resources/ad_hosts.json, со сборкой
+/// IPA) и ежедневный в релизе «lists» (ключ "hosts" манифеста, его скачивает
+/// FilterListUpdater вместе со списками). Берётся более свежий из двух. Формат:
+/// `{"version": "yyyyMMddHHmm", "hosts": ["example.com", ...]}`; хост в наборе значит «сам
+/// хост и все его поддомены». Если файлов нет, работает маленький встроенный набор `seed`.
 final class AdHosts: @unchecked Sendable {
 
     static let shared = AdHosts()
@@ -21,11 +23,16 @@ final class AdHosts: @unchecked Sendable {
     ]
 
     private let lock = NSLock()
+    /// Набор из init (по умолчанию seed) — остаётся всегда.
+    private let base: Set<String>
+    /// Добавленные тестовым флагом.
+    private var extra: Set<String> = []
     private var hosts: Set<String>
     private var loadStarted = false
     private(set) var version = "seed"
 
     init(hosts: Set<String> = AdHosts.seed) {
+        self.base = hosts
         self.hosts = hosts
     }
 
@@ -43,27 +50,55 @@ final class AdHosts: @unchecked Sendable {
         }
     }
 
-    /// Прочитать файл сейчас (в тестах или фоне).
-    func loadNow(bundle: Bundle = .main) {
-        guard let url = bundle.url(forResource: "ad_hosts", withExtension: "json"),
-              let data = try? Data(contentsOf: url),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let list = object["hosts"] as? [String] else {
-            NSLog("[Kentik] ad_hosts.json не найден — работает встроенный набор")
-            return
+    /// Перечитать в фоне (после обновления списков).
+    func reloadInBackground(bundle: Bundle = .main) {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            self?.loadNow(bundle: bundle)
         }
-        var loaded = Set(list)
-        loaded.formUnion(Self.seed)
+    }
+
+    /// Прочитать файлы сейчас (в тестах или фоне): скачанный с релизом «lists» и встроенный.
+    func loadNow(bundle: Bundle = .main) {
+        let candidates = [
+            FilterLists.downloadedPackage()?.hostsURL,
+            bundle.url(forResource: "ad_hosts", withExtension: "json"),
+        ].compactMap { $0 }
+        if load(from: candidates) == nil {
+            NSLog("[Kentik] ad_hosts.json не найден — работает встроенный набор")
+        }
+    }
+
+    /// Загружает самый свежий из файлов (по версии yyyyMMddHHmm) вместо прежнего набора.
+    /// Возвращает версию загруженного или nil, если ни один файл не прочитался.
+    @discardableResult
+    func load(from candidates: [URL]) -> String? {
+        var best: (version: String, hosts: [String])?
+        for url in candidates {
+            guard let data = try? Data(contentsOf: url),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let list = object["hosts"] as? [String] else { continue }
+            let version = object["version"] as? String ?? ""
+            if let current = best, !FilterListManifest.isVersion(version, newerThan: current.version) { continue }
+            best = (version, list)
+        }
+        guard let best else { return nil }
+        var loaded = Set(best.hosts.map { $0.lowercased() })
         lock.lock()
-        hosts.formUnion(loaded)
-        version = object["version"] as? String ?? "?"
+        loaded.formUnion(base)
+        loaded.formUnion(extra)
+        hosts = loaded
+        version = best.version.isEmpty ? "?" : best.version
         lock.unlock()
+        NSLog("[Kentik] набор рекламных хостов %@: %d", best.version, loaded.count)
+        return best.version
     }
 
     /// Добавить хосты (тестовый флаг -KentikTestAdHosts).
     func add(_ extra: [String]) {
+        let lowered = extra.map { $0.lowercased() }
         lock.lock()
-        hosts.formUnion(extra.map { $0.lowercased() })
+        self.extra.formUnion(lowered)
+        hosts.formUnion(lowered)
         lock.unlock()
     }
 

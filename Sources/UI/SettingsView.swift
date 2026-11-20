@@ -52,11 +52,28 @@ final class SettingsModel: ObservableObject {
 
     func reloadLists() {
         updatingLists = true
+        let before = ContentBlocker.shared.activeVersion
         shield.reloadRules { [weak self] error in
-            self?.updatingLists = false
-            self?.message = error == nil ? "Списки фильтров обновлены" : "Не удалось обновить списки"
+            guard let self else { return }
+            self.updatingLists = false
+            if let error {
+                self.message = "Не удалось обновить списки: \(error.localizedDescription)"
+            } else if ContentBlocker.shared.activeVersion != before {
+                self.message = "Списки фильтров обновлены. Новые правила действуют со следующей загрузки страницы"
+            } else {
+                self.message = "Списки фильтров уже свежие"
+            }
+            self.objectWillChange.send()
         }
     }
+
+    /// Дата списков и последняя проверка обновлений (с предупреждением, если устарели).
+    var listsFreshness: FilterLists.Freshness {
+        FilterLists.freshness(version: listsVersion, lastCheck: FilterListUpdater.shared.lastCheck)
+    }
+
+    /// Предупреждение о неполной блокировке (часть списков не скомпилировалась).
+    var incompleteWarning: String? { ShieldSheetViewController.incompleteText() }
 
     func setFaceID(_ on: Bool) {
         guard on else {
@@ -152,7 +169,18 @@ struct SettingsView: View {
                         }
                     }
                     .disabled(model.updatingLists)
-                    LabeledContent("Версия списков", value: model.listsVersion)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(model.listsFreshness.text)
+                            .font(.footnote)
+                            .foregroundStyle(model.listsFreshness.isStale ? Color(Theme.warn) : Color(Theme.dim))
+                        if let warning = model.incompleteWarning {
+                            Text(warning)
+                                .font(.footnote)
+                                .foregroundStyle(Color(Theme.warn))
+                        }
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("settingsListsFreshness")
                     if !model.disabledHosts.isEmpty {
                         DisclosureGroup("Выключена на сайтах (\(model.disabledHosts.count))") {
                             ForEach(model.disabledHosts, id: \.self) { host in

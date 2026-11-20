@@ -5,6 +5,13 @@ name: Списки фильтров
 # https://github.com/nadjafchurkovod123/kentik-ios/releases/download/lists/manifest.json,
 # качает новые файлы, проверяет sha256 и перекомпилирует правила.
 #
+# Туда же — набор рекламных хостов (ad_hosts.<версия>.json, ключ "hosts" манифеста): защита от
+# окон и перенаправлений обновляет его вместе со списками. Перед публикацией каждый список
+# компилируется настоящим WebKit (macOS): список с ошибкой не должен попасть к приложению.
+#
+# GitHub выключает расписание в публичном репозитории после 60 дней без активности —
+# задание keepalive каждый раз включает этот workflow заново через API.
+#
 # На ветках (push) — только сборка и отчёт, без публикации; публикует только main.
 
 on:
@@ -14,6 +21,7 @@ on:
   push:
     paths:
       - "scripts/filters/**"
+      - "scripts/ci/build_ad_hosts.py"
       - ".github/actions/build-filters/**"
       - ".github/workflows/filters.yml"
 
@@ -25,6 +33,22 @@ permissions:
   contents: write
 
 jobs:
+  keepalive:
+    name: Расписание не выключается
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Включить workflow заново (сбрасывает отсчёт 60 дней)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X PUT "repos/${{ github.repository }}/actions/workflows/filters.yml/enable" \
+            && echo "Расписание продлено" \
+            || echo "::warning::Не удалось продлить расписание списков"
+
   lists:
     name: Сборка и публикация списков
     runs-on: macos-26
@@ -38,6 +62,20 @@ jobs:
         with:
           out: build/lists
           fallback: "false"
+
+      - name: Набор рекламных хостов в манифест
+        env:
+          VERSION: ${{ steps.filters.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/build_ad_hosts.py "build/lists/ad_hosts.$VERSION.json" \
+            --version "$VERSION" --manifest build/lists/manifest.json
+
+      - name: Каждый список компилируется WebKit
+        run: |
+          set -euo pipefail
+          swiftc -O scripts/filters/check_compile.swift -o "$RUNNER_TEMP/check_compile"
+          "$RUNNER_TEMP/check_compile" build/lists
 
       - name: Артефакт lists
         uses: actions/upload-artifact@v7
@@ -60,13 +98,19 @@ jobs:
           # Сначала новые файлы (в имени есть версия), потом manifest.json — клиенты никогда
           # не увидят манифест, который ссылается на ещё не загруженные файлы.
           gh release upload lists build/lists/*.json.deflate --clobber
+          for HOSTS in build/lists/ad_hosts.*.json; do
+            [ -e "$HOSTS" ] && gh release upload lists "$HOSTS" --clobber
+          done
           gh release upload lists build/lists/manifest.json --clobber
           gh release edit lists --notes "$NOTES"
           # Старые версии файлов удаляем, оставив предыдущую (на случай клиентов посреди загрузки).
           KEEP="$(python3 - <<'PY'
           import json
           m = json.load(open("build/lists/manifest.json"))
-          print(" ".join(e["file"] for e in m["lists"]))
+          files = [e["file"] for e in m["lists"]]
+          if m.get("hosts"):
+              files.append(m["hosts"]["file"])
+          print(" ".join(files))
           PY
           )"
           gh release view lists --json assets --jq '.assets[].name' | while read -r NAME; do
@@ -74,7 +118,7 @@ jobs:
               manifest.json) continue ;;
             esac
             if ! printf '%s\n' $KEEP | grep -qx "$NAME"; then
-              ASSET_VERSION="$(echo "$NAME" | awk -F. '{print $(NF-2)}')"
+              ASSET_VERSION="$(echo "$NAME" | grep -oE '[0-9]{12}' | head -1 || true)"
               # Удаляем всё, что старее текущей версии больше чем на сутки (оставляем предыдущую сборку).
               if [ "$ASSET_VERSION" -lt "$((VERSION - 10000))" ] 2>/dev/null; then
                 echo "Удаляю устаревший $NAME"

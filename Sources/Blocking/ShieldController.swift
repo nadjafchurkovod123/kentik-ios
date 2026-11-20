@@ -50,9 +50,10 @@ final class ShieldController: ShieldControlling {
     }
 
     /// «Обновить списки»: проверка обновления (без ограничения «раз в сутки») и перекомпиляция.
+    /// Страницу не перезагружает: новые списки действуют со следующей загрузки, а о замене
+    /// списков ContentBlocker сообщает сам (.contentBlockerListsChanged).
     func reloadRules(completion: @escaping @MainActor (Error?) -> Void) {
-        ContentBlocker.shared.reloadRules { [weak self] error in
-            self?.notify()
+        ContentBlocker.shared.reloadRules { error in
             completion(error)
         }
     }

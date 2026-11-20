@@ -38,6 +38,13 @@ def main() -> int:
         with open(os.path.join(args.out, entry["file"]), "wb") as f:
             f.write(data)
         print(f"  {entry['file']}: {entry['rules']} правил", flush=True)
+    hosts = manifest.get("hosts")
+    if hosts:
+        data = get(f"{args.base}/{hosts['file']}")
+        if hashlib.sha256(data).hexdigest() == hosts["sha256"]:
+            with open(os.path.join(args.out, hosts["file"]), "wb") as f:
+                f.write(data)
+            print(f"  {hosts['file']}: {hosts.get('count')} хостов", flush=True)
     with open(os.path.join(args.out, "manifest.json"), "wb") as f:
         f.write(manifest_raw)
     print(f"Списки из релиза, версия {manifest['version']}")

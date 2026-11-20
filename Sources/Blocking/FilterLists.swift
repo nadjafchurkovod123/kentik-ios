@@ -24,6 +24,13 @@ enum FilterLists {
         func fileURL(for entry: FilterListManifest.Entry) -> URL {
             directory.appendingPathComponent(entry.file, isDirectory: false)
         }
+
+        /// Набор рекламных хостов этого выпуска (если есть и скачан).
+        var hostsURL: URL? {
+            guard let hosts = manifest.hosts else { return nil }
+            let url = directory.appendingPathComponent(hosts.file, isDirectory: false)
+            return FileManager.default.fileExists(atPath: url.path) ? url : nil
+        }
     }
 
     // MARK: - Встроенные
@@ -74,6 +81,64 @@ enum FilterLists {
         let packed = try Data(contentsOf: url, options: .mappedIfSafe)
         let raw = try (packed as NSData).decompressed(using: .zlib) as Data
         return String(decoding: raw, as: UTF8.self)
+    }
+
+    // MARK: - Свежесть
+
+    /// Дата выпуска списков по версии yyyyMMddHHmm (UTC).
+    static func date(ofVersion version: String?) -> Date? {
+        guard let version, version.count == 12, version.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.dateFormat = "yyyyMMddHHmm"
+        return formatter.date(from: version)
+    }
+
+    /// После скольких дней списки считаются устаревшими (ежедневное обновление не доходит).
+    static let staleAfterDays = 14
+
+    struct Freshness: Equatable {
+        /// «Списки от 20 ноября · проверено сегодня».
+        let text: String
+        /// Списки старше `staleAfterDays` — показать предупреждение.
+        let isStale: Bool
+        let ageDays: Int?
+    }
+
+    /// Насколько свежи списки: дата выпуска и последняя успешная проверка обновлений.
+    static func freshness(version: String?, lastCheck: Date?, now: Date = Date(),
+                          calendar: Calendar = .current) -> Freshness {
+        guard let released = date(ofVersion: version) else {
+            return Freshness(text: "Списки фильтров: \(version ?? "нет")", isStale: false, ageDays: nil)
+        }
+        let age = max(0, days(from: released, to: now, calendar: calendar))
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ru_RU")
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = calendar.isDate(released, equalTo: now, toGranularity: .year) ? "d MMMM" : "d MMMM yyyy"
+        let checked: String
+        if let lastCheck {
+            switch days(from: lastCheck, to: now, calendar: calendar) {
+            case ...0: checked = "проверено сегодня"
+            case 1: checked = "проверено вчера"
+            case let n: checked = "проверено \(n) \(RussianPlural.days(n)) назад"
+            }
+        } else {
+            checked = "обновления ещё не проверялись"
+        }
+        let stale = age > staleAfterDays
+        var text = "Списки от \(formatter.string(from: released)) · \(checked)"
+        if stale {
+            text = "Списки устарели на \(age) \(RussianPlural.days(age)) — нажмите «Обновить списки»\n" + text
+        }
+        return Freshness(text: text, isStale: stale, ageDays: age)
+    }
+
+    private static func days(from start: Date, to end: Date, calendar: Calendar) -> Int {
+        let a = calendar.startOfDay(for: start)
+        let b = calendar.startOfDay(for: end)
+        return calendar.dateComponents([.day], from: a, to: b).day ?? 0
     }
 
     // MARK: - Тестовый список

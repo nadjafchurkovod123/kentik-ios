@@ -256,3 +256,87 @@ final class ShieldTogglesTests: XCTestCase {
         }
     }
 }
+
+/// Набор рекламных хостов из релиза «lists», свежесть списков, русские подписи.
+final class ListsUpdateAndTextTests: XCTestCase {
+
+    private func writeHosts(_ version: String, _ hosts: [String]) throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("hosts-\(UUID().uuidString).json")
+        let data = try JSONSerialization.data(withJSONObject: ["version": version, "hosts": hosts])
+        try data.write(to: url)
+        return url
+    }
+
+    func testAdHostsTakesNewerOfDownloadedAndBundled() throws {
+        let bundled = try writeHosts("202611010000", ["old-ad.example"])
+        let downloaded = try writeHosts("202611200300", ["fresh-ad.example"])
+        defer {
+            try? FileManager.default.removeItem(at: bundled)
+            try? FileManager.default.removeItem(at: downloaded)
+        }
+        let hosts = AdHosts()
+        hosts.add(["test-ad.example"])
+        XCTAssertEqual(hosts.load(from: [downloaded, bundled]), "202611200300")
+        XCTAssertTrue(hosts.contains(host: "x.fresh-ad.example"))
+        XCTAssertFalse(hosts.contains(host: "old-ad.example"), "старый набор заменён свежим")
+        XCTAssertTrue(hosts.contains(host: "popads.net"), "встроенный seed остаётся всегда")
+        XCTAssertTrue(hosts.contains(host: "test-ad.example"), "тестовые хосты остаются")
+        // Порядок файлов не важен: выбирается более свежий.
+        XCTAssertEqual(AdHosts().load(from: [bundled, downloaded]), "202611200300")
+        XCTAssertNil(AdHosts().load(from: [URL(fileURLWithPath: "/nonexistent/hosts.json")]))
+    }
+
+    func testManifestWithHostsEntry() throws {
+        let sha = String(repeating: "cd", count: 32)
+        let object: [String: Any] = [
+            "schema": 1, "version": "202611201230",
+            "lists": [["id": "ads", "variant": "s26", "file": "ads.s26.json.deflate", "sha256": sha]],
+            "hosts": ["file": "ad_hosts.202611201230.json", "sha256": sha, "bytes": 10, "count": 5000,
+                      "version": "202611201230"],
+        ]
+        let manifest = try FilterListManifest.parse(try JSONSerialization.data(withJSONObject: object))
+        XCTAssertEqual(manifest.hosts?.file, "ad_hosts.202611201230.json")
+        XCTAssertEqual(manifest.hosts?.count, 5000)
+
+        var bad = object
+        bad["hosts"] = ["file": "../evil.json", "sha256": sha]
+        XCTAssertThrowsError(try FilterListManifest.parse(try JSONSerialization.data(withJSONObject: bad)))
+    }
+
+    func testListsFreshness() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = FilterLists.date(ofVersion: "202611201200")!
+        XCTAssertNil(FilterLists.date(ofVersion: "dev"))
+
+        let fresh = FilterLists.freshness(version: "202611200300", lastCheck: now, now: now, calendar: calendar)
+        XCTAssertFalse(fresh.isStale)
+        XCTAssertEqual(fresh.text, "Списки от 20 ноября · проверено сегодня")
+
+        let old = FilterLists.freshness(version: "202610300300", lastCheck: now.addingTimeInterval(-3 * 86_400),
+                                        now: now, calendar: calendar)
+        XCTAssertTrue(old.isStale)
+        XCTAssertEqual(old.ageDays, 21)
+        XCTAssertTrue(old.text.hasPrefix("Списки устарели на 21 день"), old.text)
+        XCTAssertTrue(old.text.hasSuffix("проверено 3 дня назад"), old.text)
+
+        XCTAssertEqual(FilterLists.freshness(version: "dev", lastCheck: nil, now: now, calendar: calendar).text,
+                       "Списки фильтров: dev")
+    }
+
+    func testRussianPlural() {
+        let forms = [0, 1, 2, 4, 5, 11, 12, 21, 22, 25, 101, 111].map { RussianPlural.form($0, "окно", "окна", "окон") }
+        XCTAssertEqual(forms, ["окон", "окно", "окна", "окна", "окон", "окон", "окон", "окно", "окна", "окон", "окно", "окон"])
+    }
+
+    @MainActor
+    func testShieldStatCaptions() {
+        XCTAssertEqual(ShieldSheetViewController.statCaption(1, .popups), "окно заблокировано")
+        XCTAssertEqual(ShieldSheetViewController.statCaption(2, .popups), "окна заблокированы")
+        XCTAssertEqual(ShieldSheetViewController.statCaption(5, .popups), "окон заблокировано")
+        XCTAssertEqual(ShieldSheetViewController.statCaption(1, .redirects), "переход заблокирован")
+        XCTAssertEqual(ShieldSheetViewController.statCaption(3, .redirects), "перехода заблокированы")
+        XCTAssertEqual(ShieldSheetViewController.statCaption(0, .hidden), "элементов скрыто")
+        XCTAssertEqual(ShieldSheetViewController.statCaption(21, .hidden), "элемент скрыт")
+    }
+}

@@ -132,6 +132,14 @@ final class FilterListUpdater {
                 try Self.verify(fileData, entry: entry)
                 try fileData.write(to: partial.appendingPathComponent(entry.file), options: .atomic)
             }
+            // Набор рекламных хостов защиты от окон и переходов — тем же выпуском.
+            if let hosts = manifest.hosts {
+                let url = Self.releaseBase.appendingPathComponent(hosts.file)
+                let (fileData, fileResponse) = try await session.data(from: url)
+                try Self.check(fileResponse)
+                try Self.verify(fileData, sha256: hosts.sha256, bytes: hosts.bytes, file: hosts.file)
+                try fileData.write(to: partial.appendingPathComponent(hosts.file), options: .atomic)
+            }
             try data.write(to: partial.appendingPathComponent("manifest.json"), options: .atomic)
             try? fm.removeItem(at: final)
             try fm.moveItem(at: partial, to: final)
@@ -156,6 +164,7 @@ final class FilterListUpdater {
                 try? fm.removeItem(at: root.appendingPathComponent(name))
             }
         }
+        AdHosts.shared.reloadInBackground()
         NSLog("[Kentik] списки обновлены до %@", manifest.version)
         return .updated(version: manifest.version)
     }
@@ -167,8 +176,12 @@ final class FilterListUpdater {
     }
 
     static func verify(_ data: Data, entry: FilterListManifest.Entry) throws {
-        if let bytes = entry.bytes, bytes != data.count { throw UpdateError.sizeMismatch(entry.file) }
-        guard sha256Hex(data) == entry.sha256 else { throw UpdateError.checksumMismatch(entry.file) }
+        try verify(data, sha256: entry.sha256, bytes: entry.bytes, file: entry.file)
+    }
+
+    static func verify(_ data: Data, sha256: String, bytes: Int?, file: String) throws {
+        if let bytes, bytes != data.count { throw UpdateError.sizeMismatch(file) }
+        guard sha256Hex(data) == sha256 else { throw UpdateError.checksumMismatch(file) }
     }
 
     static func sha256Hex(_ data: Data) -> String {

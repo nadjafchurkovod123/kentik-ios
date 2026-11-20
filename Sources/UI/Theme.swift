@@ -95,3 +95,44 @@ func displayHost(_ host: String?) -> String {
     let lower = host.lowercased()
     return lower.hasPrefix("www.") ? String(lower.dropFirst(4)) : lower
 }
+
+// MARK: - Шрифты с Dynamic Type
+
+extension Theme {
+    /// Шрифт интерфейса браузера с Dynamic Type: растёт вместе с «Крупным текстом» в настройках
+    /// iPhone, но не больше `maximum` (панели не резиновые). Метке нужно
+    /// `adjustsFontForContentSizeCategory = true`, чтобы она обновлялась на лету.
+    static func font(_ size: CGFloat, _ weight: UIFont.Weight = .regular, style: UIFont.TextStyle = .body,
+                     maximum: CGFloat? = nil) -> UIFont {
+        scaled(.systemFont(ofSize: size, weight: weight), style: style, maximum: maximum)
+    }
+
+    /// Цифры одинаковой ширины (счётчики) с Dynamic Type.
+    static func digits(_ size: CGFloat, _ weight: UIFont.Weight = .bold, style: UIFont.TextStyle = .body,
+                       maximum: CGFloat? = nil) -> UIFont {
+        scaled(.monospacedDigitSystemFont(ofSize: size, weight: weight), style: style, maximum: maximum)
+    }
+
+    private static func scaled(_ font: UIFont, style: UIFont.TextStyle, maximum: CGFloat?) -> UIFont {
+        let metrics = UIFontMetrics(forTextStyle: style)
+        if let maximum { return metrics.scaledFont(for: font, maximumPointSize: maximum) }
+        return metrics.scaledFont(for: font)
+    }
+}
+
+// MARK: - Русские числительные
+
+/// Форма слова после числа: 1 окно, 2 окна, 5 окон (11–14 — как 5).
+enum RussianPlural {
+    static func form(_ n: Int, _ one: String, _ few: String, _ many: String) -> String {
+        let n = abs(n) % 100
+        if (11...14).contains(n) { return many }
+        switch n % 10 {
+        case 1: return one
+        case 2...4: return few
+        default: return many
+        }
+    }
+
+    static func days(_ n: Int) -> String { form(n, "день", "дня", "дней") }
+}

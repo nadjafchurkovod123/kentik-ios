@@ -27,6 +27,16 @@ struct FilterListManifest: Codable, Equatable {
         }
     }
 
+    /// Набор рекламных хостов защиты от окон и переходов (Guard/AdHosts), публикуется в релиз
+    /// вместе со списками. Необязателен: в старых манифестах его нет.
+    struct HostsEntry: Codable, Equatable {
+        let file: String
+        let sha256: String
+        let bytes: Int?
+        let count: Int?
+        let version: String?
+    }
+
     enum ParseError: LocalizedError, Equatable {
         case unsupportedSchema(Int)
         case badVersion(String)
@@ -50,6 +60,7 @@ struct FilterListManifest: Codable, Equatable {
     let version: String
     let generated: String?
     let lists: [Entry]
+    let hosts: HostsEntry?
 
     /// Разбор и проверка: схема, версия из цифр, sha256 из 64 hex, безопасные имена файлов.
     static func parse(_ data: Data) throws -> FilterListManifest {
@@ -62,12 +73,23 @@ struct FilterListManifest: Codable, Equatable {
         for entry in manifest.lists {
             let okID = !entry.id.isEmpty && entry.id.allSatisfy { $0.isASCIILowerAlnum || $0 == "-" }
             let okVariant = !entry.variant.isEmpty && entry.variant.allSatisfy(\.isASCIILowerAlnum)
-            let okSHA = entry.sha256.count == 64 && entry.sha256.allSatisfy(\.isLowerHexDigit)
-            let okFile = !entry.file.isEmpty && !entry.file.contains("/") && !entry.file.contains("\\")
-                && !entry.file.hasPrefix(".") && !entry.file.contains("..")
-            guard okID, okVariant, okSHA, okFile else { throw ParseError.badEntry(entry.id) }
+            guard okID, okVariant, isSHA256(entry.sha256), isSafeFileName(entry.file) else {
+                throw ParseError.badEntry(entry.id)
+            }
+        }
+        if let hosts = manifest.hosts, !isSHA256(hosts.sha256) || !isSafeFileName(hosts.file) {
+            throw ParseError.badEntry("hosts")
         }
         return manifest
+    }
+
+    static func isSHA256(_ value: String) -> Bool {
+        value.count == 64 && value.allSatisfy(\.isLowerHexDigit)
+    }
+
+    /// Имя файла без каталогов и «..» — его кладём в свою папку.
+    static func isSafeFileName(_ file: String) -> Bool {
+        !file.isEmpty && !file.contains("/") && !file.contains("\\") && !file.hasPrefix(".") && !file.contains("..")
     }
 
     /// Вариант списков для этого устройства.

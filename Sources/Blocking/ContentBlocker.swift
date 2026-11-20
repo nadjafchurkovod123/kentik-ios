@@ -122,12 +122,23 @@ final class ContentBlocker {
         }
         statusText = nil
 
-        if let best {
+        if let best, !best.1.lists.isEmpty {
             activate(best.0, result: best.1)
         } else {
+            // Ни один список не скомпилировался (например, мало места): блокировка не работает.
+            // Версию не ставим (щит не делает вид, что всё в порядке) и кэш не чистим.
             ruleLists = testList.map { [$0] } ?? []
+            activeVersion = nil
+            activeOrigin = nil
+            failedLists = best?.1.failures.map(\.name) ?? []
+            if best != nil {
+                NSLog("[Kentik] ни один список не скомпилировался — блокировка рекламы не работает")
+            }
         }
     }
+
+    /// Списков ожидалось больше, чем работает (часть или все не скомпилировались).
+    var isIncomplete: Bool { !failedLists.isEmpty }
 
     private func compile(_ package: FilterLists.Package) async -> RuleListCompiler.Result {
         let entries = package.manifest.entries()

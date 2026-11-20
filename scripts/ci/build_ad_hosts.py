@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """Собирает Sources/Resources/ad_hosts.json — набор рекламных, попандерных и вредоносных хостов.
 
-Использование: build_ad_hosts.py <файл-вывода>
+Использование: build_ad_hosts.py <файл-вывода> [--version yyyyMMddHHmm] [--manifest manifest.json]
+
+С --manifest файл ещё и записывается в манифест списков фильтров (ключ "hosts": имя файла,
+sha256, размер, число хостов) — так набор публикуется в релиз «lists» вместе со списками и
+приложение обновляет его раз в сутки, а не только с новой сборкой IPA. Если источники не
+скачались (в наборе почти ничего), в манифест он не попадает.
 
 Набор нужен защите от всплывающих окон и перенаправлений (Guard/AdHosts.swift): переход
 главного фрейма без касания пользователя на такой хост отменяется, новое окно на такой хост
@@ -16,8 +21,11 @@
   * uBlock Origin badware (вредоносные и мошеннические сайты);
   * uBlock Origin filters — только правила ||host^$popup без привязки к сайту.
 """
+import argparse
 import datetime
+import hashlib
 import json
+import os
 import re
 import sys
 import urllib.request
@@ -113,11 +121,17 @@ def compact(hosts):
     return result
 
 
+# Меньше — значит источники не скачались: такой набор не публикуем (приложение оставит прежний).
+MIN_PUBLISHED_HOSTS = 2000
+
+
 def main():
-    if len(sys.argv) != 2:
-        print(__doc__)
-        return 2
-    out = sys.argv[1]
+    ap = argparse.ArgumentParser(description="Набор рекламных хостов Kentik")
+    ap.add_argument("out")
+    ap.add_argument("--version", default=datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d%H%M"))
+    ap.add_argument("--manifest")
+    args = ap.parse_args()
+    out = args.out
     hosts, exceptions, counts = set(SEED), set(), {}
     for name, (kind, url) in SOURCES.items():
         try:
@@ -133,14 +147,34 @@ def main():
     hosts = {h for h in hosts - exceptions if valid(h)}
     hosts = sorted(compact(hosts))
     data = {
-        "version": datetime.date.today().isoformat(),
+        # Цифры yyyyMMddHHmm, как у списков фильтров: приложение берёт более свежий набор
+        # из встроенного и скачанного.
+        "version": args.version,
         "count": len(hosts),
         "sources": counts,
         "hosts": hosts,
     }
-    with open(out, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    with open(out, "wb") as f:
+        f.write(payload)
     print(f"итого: {len(hosts)} хостов: {out}")
+
+    if args.manifest:
+        if len(hosts) < MIN_PUBLISHED_HOSTS:
+            print(f"::warning::в наборе всего {len(hosts)} хостов — в манифест не добавляю")
+            return 0
+        with open(args.manifest, encoding="utf-8") as f:
+            manifest = json.load(f)
+        manifest["hosts"] = {
+            "file": os.path.basename(out),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+            "bytes": len(payload),
+            "count": len(hosts),
+            "version": args.version,
+        }
+        with open(args.manifest, "w", encoding="utf-8") as f:
+            json.dump(manifest, f, ensure_ascii=False, indent=1)
+        print(f"набор хостов добавлен в {args.manifest}")
     return 0
 
 

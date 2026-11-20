@@ -30,6 +30,8 @@ protocol ShieldControlling: AnyObject {
     func isEnabled(forHost host: String?, incognito: Bool) -> Bool
     func setEnabled(_ enabled: Bool, forHost host: String, incognito: Bool)
     func stats(for tab: Tab) -> ShieldStats
-    /// Перекомпилировать правила (например, после обновления списков).
+    /// Перекомпилировать правила (например, после обновления списков). Страницу не
+    /// перезагружает и .shieldSettingsChanged не шлёт: о новых списках —
+    /// .contentBlockerListsChanged, действуют они со следующей загрузки страницы.
     func reloadRules(completion: @escaping @MainActor (Error?) -> Void)
 }

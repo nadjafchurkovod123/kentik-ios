@@ -79,13 +79,16 @@ final class BlockerStatusBanner: UIView {
 
     private func attach() {
         guard ContentBlocker.shared.statusText != nil, superview == nil, let window = Self.keyWindow() else { return }
+        // В вид главного экрана, а не в окно: открытые шторки (щит, настройки) лежат выше и
+        // плашку закрывают — шторка щита сама показывает ход подготовки.
+        let container: UIView = window.rootViewController?.view ?? window
         translatesAutoresizingMaskIntoConstraints = false
-        window.addSubview(self)
+        container.addSubview(self)
         NSLayoutConstraint.activate([
-            centerXAnchor.constraint(equalTo: window.centerXAnchor),
-            leadingAnchor.constraint(greaterThanOrEqualTo: window.leadingAnchor, constant: 16),
+            centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 16),
             // Над нижней панелью (адресная строка + кнопки) — не закрывает их.
-            bottomAnchor.constraint(equalTo: window.safeAreaLayoutGuide.bottomAnchor, constant: -124),
+            bottomAnchor.constraint(equalTo: container.safeAreaLayoutGuide.bottomAnchor, constant: -124),
         ])
         UIView.animate(withDuration: 0.25) { self.alpha = 1 }
     }
