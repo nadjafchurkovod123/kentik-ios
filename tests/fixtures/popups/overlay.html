@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 16px; background: #0f0a17; color: #fbfbfe; font: 17px -apple-system, system-ui, sans-serif; }
+  h1 { color: #a78bfa; font-size: 22px; margin: 0 0 12px; }
+  .player { height: 220px; border-radius: 12px; background: #1e0b36; display: flex; align-items: center; justify-content: center;
+            font-size: 22px; color: #c08cf0; cursor: pointer; user-select: none; -webkit-user-select: none; }
+  a { color: #a78bfa; font-size: 20px; display: inline-block; padding: 12px 0; }
+  p { color: #bfbfc9; }
+</style>
+<title>Kentik Overlay</title>
+<style>
+  .wrap { position: relative; width: 320px; height: 180px; }
+  video { width: 320px; height: 180px; background: #1e0b36; display: block; border-radius: 12px; cursor: pointer; }
+  .caption { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+             color: #c08cf0; font-size: 22px; pointer-events: none; }
+</style>
+</head>
+<body>
+  <h1>Невидимый слой над видео</h1>
+  <div class="wrap">
+    <video id="video" playsinline muted></video>
+    <div class="caption">Видео</div>
+  </div>
+  <p>Рекламный скрипт кладёт прозрачный слой на весь экран поверх плеера.</p>
+  <script>
+    document.getElementById('video').addEventListener('click', function () {
+      document.title = 'Kentik Overlay · видео';
+    });
+    // Как рекламный скрипт: прозрачный слой с огромным z-index, добавленный после загрузки.
+    setTimeout(function () {
+      var o = document.createElement('div');
+      o.id = 'ad-overlay';
+      o.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;z-index:2147483647;background:transparent;cursor:pointer';
+      o.addEventListener('click', function () {
+        window.open('http://localhost:8765/popups/ad-landing.html');
+        document.title = 'Kentik Overlay · реклама';
+      });
+      document.body.appendChild(o);
+    }, 300);
+  </script>
+</body>
+</html>

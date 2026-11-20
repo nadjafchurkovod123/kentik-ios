@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 16px; background: #0f0a17; color: #fbfbfe; font: 17px -apple-system, system-ui, sans-serif; }
+  h1 { color: #a78bfa; font-size: 22px; margin: 0 0 12px; }
+  .player { height: 220px; border-radius: 12px; background: #1e0b36; display: flex; align-items: center; justify-content: center;
+            font-size: 22px; color: #c08cf0; cursor: pointer; user-select: none; -webkit-user-select: none; }
+  a { color: #a78bfa; font-size: 20px; display: inline-block; padding: 12px 0; }
+  p { color: #bfbfc9; }
+</style>
+<title>Kentik Redirect</title>
+</head>
+<body>
+  <h1>Перенаправление по таймеру</h1>
+  <a id="go" href="http://localhost:8765/popups/ad-landing.html">Перейти по ссылке</a>
+  <p>Через секунду скрипт сам уводит вкладку на рекламный хост (другой сайт).</p>
+  <script>
+    setTimeout(function () {
+      location.href = 'http://localhost:8765/popups/ad-landing.html';
+      setTimeout(function () { document.title = 'Kentik Redirect · таймер'; }, 400);
+    }, 1200);
+  </script>
+</body>
+</html>

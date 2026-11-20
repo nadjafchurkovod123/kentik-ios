@@ -47,6 +47,8 @@ final class Tab {
 
     func load(_ url: URL) {
         requestedURL = url
+        // Адрес открывает сам пользователь (адресная строка, «Открыть») — защита не мешает.
+        RedirectGuard.shared.noteAppNavigation(to: url, tab: self)
         webView.load(URLRequest(url: url))
         notifyChanged()
     }

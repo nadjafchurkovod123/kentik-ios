@@ -56,6 +56,13 @@ jobs:
           /usr/libexec/PlistBuddy -c "Add :KentikFilterListsVersion string $LISTS_VERSION" Sources/Resources/Info.plist
           echo "KentikFilterListsVersion = $LISTS_VERSION"
 
+      # Набор рекламных/попандерных/вредоносных хостов для защиты от окон и перенаправлений
+      # (Guard/AdHosts.swift). Файл общий с блокировщиком: Sources/Resources/ad_hosts.json.
+      - name: Сборка набора рекламных хостов (ad_hosts.json)
+        run: |
+          python3 scripts/ci/build_ad_hosts.py Sources/Resources/ad_hosts.json
+          ls -lh Sources/Resources/ad_hosts.json
+
       - name: Генерация проекта
         run: xcodegen generate
 
