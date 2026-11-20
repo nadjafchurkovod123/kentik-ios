@@ -20,7 +20,9 @@ final class BlockedNoticeBar: UIView {
         }
     }
 
-    static let visibleSeconds: TimeInterval = 6
+    /// Сколько плашка висит. В UI-тестах дольше: медленный симулятор не должен успевать
+    /// её прятать, пока тест ищет кнопку.
+    static var visibleSeconds: TimeInterval { TestHooks.isUITest ? 30 : 8 }
 
     private weak var tab: Tab?
     private var kind: Kind = .popup
@@ -155,7 +157,7 @@ final class BlockedNoticeBar: UIView {
 
     private func dismiss() {
         hideWork?.cancel()
-        UIView.animate(withDuration: 0.2, animations: {
+        UIView.animate(withDuration: 0.2, delay: 0, options: [.allowUserInteraction, .beginFromCurrentState], animations: {
             self.alpha = 0
             self.transform = CGAffineTransform(translationX: 0, y: 16)
         }, completion: { _ in

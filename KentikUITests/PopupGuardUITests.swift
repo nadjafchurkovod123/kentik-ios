@@ -26,11 +26,10 @@ final class PopupGuardUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["popupBlockedText"].label.hasPrefix("Всплывающее окно заблокировано"))
         attachScreenshot(app, name: "01-player-popup-blocked")
 
+        let open = app.buttons["popupBlockedOpen"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5), "нет кнопки «Открыть»")
         sleep(1)
         XCTAssertEqual(title.label, "Kentik Player · нажато", "открылась новая вкладка")
-
-        let open = app.buttons["popupBlockedOpen"]
-        XCTAssertTrue(open.exists, "нет кнопки «Открыть»")
         open.tap()
         waitForTitle(app, "Kentik Popup Target")
         attachScreenshot(app, name: "02-opened-by-user")
