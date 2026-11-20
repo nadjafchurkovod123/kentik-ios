@@ -5,11 +5,11 @@ import Foundation
 @MainActor
 final class ShieldController: ShieldControlling {
 
-    static let shared = ShieldController()
+    static let shared = ShieldController(settings: .shared)
 
     private let settings: BlockingSettings
 
-    init(settings: BlockingSettings = .shared) {
+    init(settings: BlockingSettings) {
         self.settings = settings
     }
 

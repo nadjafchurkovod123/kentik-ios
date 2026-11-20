@@ -11,7 +11,8 @@ final class HomeView: UIView {
         clipsToBounds = true
         accessibilityIdentifier = "homeView"
 
-        imageView.contentMode = .scaleAspectFill
+        // Обои на чёрном фоне: целиком вписываем, чтобы акула с короной не обрезалась в портрете.
+        imageView.contentMode = .scaleAspectFit
         imageView.translatesAutoresizingMaskIntoConstraints = false
         addSubview(imageView)
         NSLayoutConstraint.activate([
