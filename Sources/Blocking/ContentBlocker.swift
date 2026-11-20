@@ -52,9 +52,11 @@ final class ContentBlocker {
         var lists: [WKContentRuleList] = []
     }
 
-    init(settings: BlockingSettings = .shared, compiler: RuleListCompiler = RuleListCompiler()) {
-        self.settings = settings
-        self.compiler = compiler
+    /// nil — общие настройки и хранилище по умолчанию (аргументы по умолчанию не могут
+    /// обращаться к главному актору, поэтому подставляем их здесь).
+    init(settings: BlockingSettings? = nil, compiler: RuleListCompiler? = nil) {
+        self.settings = settings ?? .shared
+        self.compiler = compiler ?? RuleListCompiler()
     }
 
     // MARK: - Подготовка

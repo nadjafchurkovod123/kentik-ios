@@ -12,7 +12,7 @@ final class RuleListCompiler {
     struct Source {
         let identifier: String
         let name: String
-        let load: () throws -> String
+        let load: @Sendable () throws -> String
     }
 
     struct Result {
@@ -30,8 +30,8 @@ final class RuleListCompiler {
 
     let store: WKContentRuleListStore
 
-    init(store: WKContentRuleListStore = .default()) {
-        self.store = store
+    init(store: WKContentRuleListStore? = nil) {
+        self.store = store ?? .default()
     }
 
     /// - Parameter progress: (номер, всего) — вызывается перед компиляцией, не взятой из кэша.
