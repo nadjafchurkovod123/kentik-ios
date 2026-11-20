@@ -102,7 +102,9 @@ jobs:
             [ -e "$HOSTS" ] && gh release upload lists "$HOSTS" --clobber
           done
           gh release upload lists build/lists/manifest.json --clobber
-          gh release edit lists --notes "$NOTES"
+          # --latest=false: «последним» релизом остаётся версия приложения (releases/latest
+          # с Kentik.ipa из INSTALL.md), а не служебный релиз со списками.
+          gh release edit lists --notes "$NOTES" --latest=false
           # Старые версии файлов удаляем, оставив предыдущую (на случай клиентов посреди загрузки).
           KEEP="$(python3 - <<'PY'
           import json
