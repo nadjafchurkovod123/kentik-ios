@@ -9,3 +9,5 @@ DerivedData/
 xcuserdata/
 .DS_Store
 __pycache__/
+# Набор рекламных хостов собирает CI (scripts/ci/build_ad_hosts.py)
+Sources/Resources/ad_hosts.json
