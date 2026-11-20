@@ -26,12 +26,19 @@ enum WebViewFactory {
 
     /// Создаёт веб-вью для вкладки.
     /// - Parameter popupConfiguration: конфигурация из `createWebViewWith` — WebKit требует
-    ///   вернуть веб-вью ровно с ней. Хуки блокировщика и защиты уже стоят в ней (она
-    ///   унаследована от вкладки-открывателя), поэтому повторно их не ставим.
+    ///   вернуть веб-вью ровно с ней. Контроллер скриптов в ней заменяем на свой (хуки
+    ///   блокировщика и защиты ставятся заново), остальное наследуется от открывателя.
     static func makeWebView(for tab: Tab, popupConfiguration: WKWebViewConfiguration? = nil) -> WKWebView {
         let configuration: WKWebViewConfiguration
         if let popupConfiguration {
             configuration = popupConfiguration
+            // Свой контроллер для окна: иначе оно делит его с вкладкой-открывателем, и
+            // выключение щита на сайте окна сняло бы правила и у открывателя.
+            // WebKit проверяет только связь с открывателем, а не контроллер.
+            let userContent = WKUserContentController()
+            configuration.userContentController = userContent
+            ContentBlocker.shared.install(on: userContent, host: nil, incognito: tab.isIncognito)
+            GuardInstaller.install(on: configuration, tab: tab)
         } else {
             configuration = WKWebViewConfiguration()
             configuration.websiteDataStore = tab.isIncognito

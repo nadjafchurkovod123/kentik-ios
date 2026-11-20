@@ -1,0 +1,72 @@
+name: Сборка списков фильтров
+description: >
+  Скачивает списки (EasyList, EasyPrivacy, RU AdList, AdGuard, uBlock, Peter Lowe), конвертирует их
+  AdGuard SafariConverterLib в JSON WKContentRuleList и кладёт в папку вывода вместе с manifest.json.
+  Если источники или конвертер недоступны — берёт готовые списки из релиза «lists».
+
+inputs:
+  out:
+    description: Папка вывода (.json.deflate + manifest.json)
+    required: true
+  fallback:
+    description: При ошибке сборки взять списки из релиза «lists»
+    required: false
+    default: "true"
+
+outputs:
+  version:
+    description: Версия собранных списков (yyyyMMddHHmm)
+    value: ${{ steps.build.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    # Конвертер: AdGuard SafariConverterLib (GPL-3.0), собираем из исходников по закреплённому коммиту.
+    - name: Кэш ConverterTool
+      id: cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.kentik-converter
+        key: converter-${{ runner.os }}-${{ runner.arch }}-1cfdcaf042880a5e0027a8fc6f7ebf9ee667acc9-v2
+
+    - name: Сборка ConverterTool (SafariConverterLib v4.3.1)
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        SRC="$RUNNER_TEMP/SafariConverterLib"
+        rm -rf "$SRC"
+        git clone --quiet --depth 1 --branch v4.3.1 https://github.com/AdguardTeam/SafariConverterLib.git "$SRC"
+        HEAD_SHA="$(git -C "$SRC" rev-parse HEAD)"
+        echo "SafariConverterLib HEAD: $HEAD_SHA"
+        test "$HEAD_SHA" = "1cfdcaf042880a5e0027a8fc6f7ebf9ee667acc9"
+        (cd "$SRC" && swift build -c release --product ConverterTool)
+        # Рядом с бинарником нужны ресурсные бандлы (swift-psl: список публичных суффиксов).
+        rm -rf ~/.kentik-converter && mkdir -p ~/.kentik-converter
+        cp "$SRC/.build/release/ConverterTool" ~/.kentik-converter/ConverterTool
+        cp -R "$SRC"/.build/release/*.bundle ~/.kentik-converter/
+        ls ~/.kentik-converter
+
+    - name: Конвертация списков
+      id: build
+      shell: bash
+      env:
+        OUT: ${{ inputs.out }}
+        FALLBACK: ${{ inputs.fallback }}
+      run: |
+        set -uo pipefail
+        mkdir -p "$OUT"
+        if python3 scripts/filters/build_filters.py \
+             --converter "$HOME/.kentik-converter/ConverterTool" \
+             --out "$OUT" --work "$RUNNER_TEMP/filters-work" \
+             --converter-version "SafariConverterLib v4.3.1"; then
+          echo "Списки собраны из источников."
+        elif [ "$FALLBACK" = "true" ]; then
+          echo "::warning::Сборка списков не удалась — беру готовые из релиза «lists»."
+          python3 scripts/filters/fetch_release_lists.py --out "$OUT" || exit 1
+        else
+          exit 1
+        fi
+        VERSION="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$OUT/manifest.json")"
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        ls -l "$OUT"

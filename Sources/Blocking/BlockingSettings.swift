@@ -1,6 +1,8 @@
 import Foundation
 
 /// Хранимые настройки щита: общий выключатель и список сайтов, где щит выключен.
+/// Сайт = регистрируемый домен (приближение eTLD+1, см. DomainMatcher): выключение на
+/// «kinogo.ru» действует и на «m.kinogo.ru». Вкладки инкогнито используют те же настройки.
 @MainActor
 final class BlockingSettings {
 
@@ -19,13 +21,15 @@ final class BlockingSettings {
 
     /// Щит включён везде (по умолчанию — да).
     var isEnabledGlobally: Bool {
-        get { defaults.object(forKey: Key.enabled) as? Bool ?? true }
+        // bool(forKey:) понимает и строки ("NO", "0") — так значение можно задать аргументом
+        // запуска (-shield.enabled NO) в UI-тестах.
+        get { defaults.object(forKey: Key.enabled) == nil ? true : defaults.bool(forKey: Key.enabled) }
         set { defaults.set(newValue, forKey: Key.enabled) }
     }
 
-    /// Сайты (нормализованные хосты), где щит выключен.
+    /// Сайты (регистрируемые домены), где щит выключен.
     private(set) var disabledHosts: Set<String> {
-        get { Set(defaults.stringArray(forKey: Key.disabledHosts) ?? []) }
+        get { Set((defaults.stringArray(forKey: Key.disabledHosts) ?? []).map(Self.normalize)) }
         set { defaults.set(newValue.sorted(), forKey: Key.disabledHosts) }
     }
 
@@ -43,9 +47,8 @@ final class BlockingSettings {
         disabledHosts = hosts
     }
 
-    /// "WWW.Example.com" → "example.com".
+    /// "WWW.M.Example.com" → "example.com" (регистрируемый домен).
     nonisolated static func normalize(_ host: String) -> String {
-        let lower = host.lowercased()
-        return lower.hasPrefix("www.") ? String(lower.dropFirst(4)) : lower
+        DomainMatcher.registrableDomain(of: host)
     }
 }

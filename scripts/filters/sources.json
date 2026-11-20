@@ -1,0 +1,96 @@
+{
+  "_comment": "Источники списков фильтров Kentik. Порядок списков = приоритет. fixes добавляются в КАЖДЫЙ список: исключения WebKit действуют только внутри своего списка.",
+  "schema": 1,
+  "fixes": ["ublock-unbreak", "ublock-quick-fixes"],
+  "sources": {
+    "easylist": {
+      "title": "EasyList",
+      "urls": ["https://easylist.to/easylist/easylist.txt",
+               "https://ublockorigin.github.io/uAssets/thirdparties/easylist.txt"]
+    },
+    "easyprivacy": {
+      "title": "EasyPrivacy",
+      "urls": ["https://easylist.to/easylist/easyprivacy.txt",
+               "https://ublockorigin.github.io/uAssets/thirdparties/easyprivacy.txt"]
+    },
+    "ruadlist": {
+      "title": "RU AdList (Lain_13, dimisa)",
+      "urls": ["https://raw.githubusercontent.com/dimisa-RUAdList/RUAdListCDN/main/lists/ruadlist.ubo.min.txt",
+               "https://cdn.jsdelivr.net/gh/dimisa-RUAdList/RUAdListCDN@main/lists/ruadlist.ubo.min.txt"]
+    },
+    "ruadlist-counters": {
+      "title": "RU AdList: счётчики",
+      "urls": ["https://raw.githubusercontent.com/easylist/ruadlist/master/cntblock.txt",
+               "https://cdn.jsdelivr.net/gh/easylist/ruadlist@master/cntblock.txt"],
+      "optional": true
+    },
+    "adguard-russian": {
+      "title": "AdGuard Russian (версия для Safari)",
+      "urls": ["https://filters.adtidy.org/extension/safari/filters/1.txt"]
+    },
+    "adguard-mobile": {
+      "title": "AdGuard Mobile Ads (версия для Safari)",
+      "urls": ["https://filters.adtidy.org/extension/safari/filters/11.txt"],
+      "optional": true
+    },
+    "adguard-popups": {
+      "title": "AdGuard Popups (версия для Safari)",
+      "urls": ["https://filters.adtidy.org/extension/safari/filters/19.txt"]
+    },
+    "adguard-cookies": {
+      "title": "AdGuard Annoyances: Cookie Notices (версия для Safari)",
+      "urls": ["https://filters.adtidy.org/extension/safari/filters/18.txt"],
+      "optional": true
+    },
+    "adguard-app-banners": {
+      "title": "AdGuard Annoyances: Mobile App Banners (версия для Safari)",
+      "urls": ["https://filters.adtidy.org/extension/safari/filters/20.txt"],
+      "optional": true
+    },
+    "adguard-other-annoyances": {
+      "title": "AdGuard Annoyances: Other (версия для Safari)",
+      "urls": ["https://filters.adtidy.org/extension/safari/filters/21.txt"]
+    },
+    "ublock-filters": {
+      "title": "uBlock filters – Ads",
+      "urls": ["https://ublockorigin.github.io/uAssets/filters/filters.min.txt",
+               "https://ublockorigin.pages.dev/filters/filters.min.txt",
+               "https://cdn.jsdelivr.net/gh/uBlockOrigin/uAssetsCDN@main/filters/filters.min.txt"]
+    },
+    "ublock-privacy": {
+      "title": "uBlock filters – Privacy",
+      "urls": ["https://ublockorigin.github.io/uAssets/filters/privacy.min.txt",
+               "https://ublockorigin.pages.dev/filters/privacy.min.txt"]
+    },
+    "ublock-badware": {
+      "title": "uBlock filters – Badware risks",
+      "urls": ["https://ublockorigin.github.io/uAssets/filters/badware.min.txt",
+               "https://ublockorigin.pages.dev/filters/badware.min.txt"]
+    },
+    "ublock-unbreak": {
+      "title": "uBlock filters – Unbreak",
+      "urls": ["https://ublockorigin.github.io/uAssets/filters/unbreak.min.txt",
+               "https://ublockorigin.pages.dev/filters/unbreak.min.txt"]
+    },
+    "ublock-quick-fixes": {
+      "title": "uBlock filters – Quick fixes",
+      "urls": ["https://ublockorigin.github.io/uAssets/filters/quick-fixes.min.txt",
+               "https://ublockorigin.pages.dev/filters/quick-fixes.min.txt"]
+    },
+    "peter-lowe": {
+      "title": "Peter Lowe's Ad and tracking server list",
+      "urls": ["https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus&showintro=0&mimetype=plaintext"]
+    }
+  },
+  "lists": [
+    {"id": "ads", "title": "Реклама", "sources": ["easylist", "ublock-filters", "adguard-mobile", "peter-lowe"]},
+    {"id": "ru", "title": "Реклама рунета", "sources": ["ruadlist", "adguard-russian"]},
+    {"id": "annoyances", "title": "Всплывающие окна и раздражители", "sources": ["adguard-popups", "adguard-other-annoyances", "adguard-app-banners", "adguard-cookies"]},
+    {"id": "privacy", "title": "Трекеры", "sources": ["easyprivacy", "ublock-privacy", "ruadlist-counters"]},
+    {"id": "security", "title": "Опасные сайты", "sources": ["ublock-badware"]}
+  ],
+  "variants": [
+    {"id": "s26", "safari": "26", "minIOS": 26},
+    {"id": "s16", "safari": "16.4", "minIOS": 16.4}
+  ]
+}

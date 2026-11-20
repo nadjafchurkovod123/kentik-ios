@@ -36,10 +36,11 @@ final class ShieldController: ShieldControlling {
             blockedPopups: tab.blockedPopups,
             blockedRedirects: tab.blockedRedirects,
             hiddenElements: tab.hiddenElements,
-            listsVersion: FilterLists.version
+            listsVersion: ContentBlocker.shared.activeVersion ?? FilterLists.version
         )
     }
 
+    /// «Обновить списки»: проверка обновления (без ограничения «раз в сутки») и перекомпиляция.
     func reloadRules(completion: @escaping @MainActor (Error?) -> Void) {
         ContentBlocker.shared.reloadRules { [weak self] error in
             self?.notify()

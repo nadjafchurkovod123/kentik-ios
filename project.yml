@@ -30,6 +30,13 @@ targets:
       - path: Sources
         excludes:
           - "Resources/Info.plist"
+          - "Resources/Filters"
+          - "Resources/Filters/**"
+      # Списки фильтров (собирает CI) — папкой Filters/ в бандле; локально папки может не быть.
+      - path: Sources/Resources/Filters
+        type: folder
+        buildPhase: resources
+        optional: true
     settings:
       base:
         PRODUCT_NAME: Kentik

@@ -1,0 +1,85 @@
+name: Списки фильтров
+
+# Ежедневно пересобирает списки фильтров и публикует их в «скользящий» релиз с тегом lists.
+# Приложение раз в сутки (и по «Обновить списки») читает
+# https://github.com/nadjafchurkovod123/kentik-ios/releases/download/lists/manifest.json,
+# качает новые файлы, проверяет sha256 и перекомпилирует правила.
+#
+# На ветках (push) — только сборка и отчёт, без публикации; публикует только main.
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/filters/**"
+      - ".github/actions/build-filters/**"
+      - ".github/workflows/filters.yml"
+
+concurrency:
+  group: filters-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  lists:
+    name: Сборка и публикация списков
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Сборка списков
+        id: filters
+        uses: ./.github/actions/build-filters
+        with:
+          out: build/lists
+          fallback: "false"
+
+      - name: Артефакт lists
+        uses: actions/upload-artifact@v7
+        with:
+          name: lists
+          path: build/lists
+          if-no-files-found: error
+
+      - name: Публикация в релиз lists
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.filters.outputs.version }}
+        run: |
+          set -euo pipefail
+          NOTES="Списки фильтров Kentik, обновляются автоматически раз в сутки. Версия $VERSION. Приложение берёт manifest.json и файлы отсюда."
+          if ! gh release view lists >/dev/null 2>&1; then
+            gh release create lists --title "Списки фильтров" --notes "$NOTES" --latest=false --target "$GITHUB_SHA"
+          fi
+          # Сначала новые файлы (в имени есть версия), потом manifest.json — клиенты никогда
+          # не увидят манифест, который ссылается на ещё не загруженные файлы.
+          gh release upload lists build/lists/*.json.deflate --clobber
+          gh release upload lists build/lists/manifest.json --clobber
+          gh release edit lists --notes "$NOTES"
+          # Старые версии файлов удаляем, оставив предыдущую (на случай клиентов посреди загрузки).
+          KEEP="$(python3 - <<'PY'
+          import json
+          m = json.load(open("build/lists/manifest.json"))
+          print(" ".join(e["file"] for e in m["lists"]))
+          PY
+          )"
+          gh release view lists --json assets --jq '.assets[].name' | while read -r NAME; do
+            case "$NAME" in
+              manifest.json) continue ;;
+            esac
+            if ! printf '%s\n' $KEEP | grep -qx "$NAME"; then
+              ASSET_VERSION="$(echo "$NAME" | awk -F. '{print $(NF-2)}')"
+              # Удаляем всё, что старее текущей версии больше чем на сутки (оставляем предыдущую сборку).
+              if [ "$ASSET_VERSION" -lt "$((VERSION - 10000))" ] 2>/dev/null; then
+                echo "Удаляю устаревший $NAME"
+                gh release delete-asset lists "$NAME" -y
+              fi
+            fi
+          done
+          echo "Опубликована версия $VERSION"
