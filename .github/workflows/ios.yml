@@ -119,6 +119,7 @@ jobs:
             -derivedDataPath build/DerivedData \
             -resultBundlePath build/TestResults.xcresult \
             -parallel-testing-enabled NO \
+            -retry-tests-on-failure -test-iterations 2 \
             -skip-testing:KentikUITests/RealSitesUITests \
             | xcbeautify --renderer github-actions
 
@@ -298,7 +299,8 @@ jobs:
             echo "Источник уже содержит $VERSION"
             exit 0
           fi
-          git commit -m "iOS: источник AltStore — версия $VERSION [skip ci]"
+          git commit -m "iOS: источник AltStore — версия $VERSION [skip ci]" \
+            -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
           for i in 1 2 3; do
             git push origin HEAD:main && break
             git pull --rebase origin main

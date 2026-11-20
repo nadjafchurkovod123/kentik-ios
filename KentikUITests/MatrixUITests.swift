@@ -73,10 +73,14 @@ final class MatrixUITests: XCTestCase {
         let rows = app.descendants(matching: .any).matching(identifier: "historyRow")
         let normalRow = rows.matching(NSPredicate(format: "label CONTAINS %@", "cookie.html?normal")).firstMatch
         XCTAssertTrue(normalRow.waitForExistence(timeout: 10), "обычной страницы нет в истории")
-        let secret = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@ OR label CONTAINS %@",
-                                  "secret", "incognito", "Secret"))
-        XCTAssertEqual(secret.count, 0, "страница из инкогнито попала в историю")
+        // Смотрим только строки истории: под шторкой остаётся браузер, и его элементы
+        // (подписи вкладок, значок инкогнито) давали ложное срабатывание.
+        let secret = rows.matching(NSPredicate(format: "label CONTAINS[c] %@ OR label CONTAINS[c] %@",
+                                               "secret", "incognito"))
+        let leaked = secret.allElementsBoundByIndex.map { $0.label }
+        XCTAssertEqual(leaked.count, 0, "страница из инкогнито попала в историю: \(leaked)")
+        let all = rows.allElementsBoundByIndex.map { $0.label }
+        XCTAssertEqual(all.count, 2, "в истории ждали две обычные страницы, строки: \(all)")
         sleep(1)
         attachScreenshot(app, name: "06-history-without-incognito")
     }
