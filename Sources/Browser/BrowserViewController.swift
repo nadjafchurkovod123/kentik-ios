@@ -606,8 +606,9 @@ final class BrowserViewController: UIViewController {
         if IncognitoLock.shared.isLocked, isShowingIncognitoContent {
             // Запираем: убрать всё, что показывает инкогнито поверх страницы (чтение, щит,
             // вкладки), и ввод адреса — замок закрывает только область страницы.
+            // Переключатель вкладок не закрываем: он сам прячет раздел «Инкогнито» за замком.
             if addressBar.textField.isFirstResponder { addressBar.textField.resignFirstResponder() }
-            if presentedViewController != nil { dismiss(animated: false) }
+            if let presented = presentedViewController, presented !== tabSwitcher { dismiss(animated: false) }
         }
         updateLockOverlay(autoPrompt: false)
         updateChrome()
@@ -619,6 +620,7 @@ final class BrowserViewController: UIViewController {
         if let previous {
             captureSnapshot(of: previous, completion: nil)
             previous.webView.removeFromSuperview()
+            setPageHidden(false, for: previous)
         }
         if let tab {
             SessionStore.shared.loadPendingIfNeeded(tab)
@@ -654,7 +656,10 @@ final class BrowserViewController: UIViewController {
     }
 
     private func captureSnapshot(of tab: Tab, completion: (() -> Void)?) {
-        guard tab.url != nil, tab.webView.window != nil else {
+        // Запертую вкладку инкогнито не снимаем: она спрятана, снимок вышел бы пустым,
+        // а свежий снимок запертой страницы и не нужен, пока её никому не показывают.
+        let locked = tab.isIncognito && IncognitoLock.shared.isLocked
+        guard tab.url != nil, tab.webView.window != nil, !locked else {
             completion?()
             return
         }
@@ -740,8 +745,17 @@ final class BrowserViewController: UIViewController {
         shieldSheet?.refresh()
     }
 
+    /// Страница под замком не рисуется вовсе и не видна VoiceOver: замок её не прикрывает,
+    /// а заменяет (иначе текст страницы оставался бы в дереве доступности под замком).
+    private func setPageHidden(_ hidden: Bool, for tab: Tab) {
+        tab.webView.isHidden = hidden
+        tab.webView.accessibilityElementsHidden = hidden
+    }
+
     private func updateLockOverlay(autoPrompt: Bool) {
-        let locked = (tabManager.selectedTab?.isIncognito ?? false) && IncognitoLock.shared.isLocked
+        let locked = isIncognitoLocked
+        if let tab = tabManager.selectedTab { setPageHidden(locked, for: tab) }
+        homeView.accessibilityElementsHidden = locked
         if locked {
             if lockView == nil {
                 let lock = IncognitoLockView()

@@ -23,6 +23,16 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
 
     private var tabs: [Tab] { showingIncognito ? tabManager.incognitoTabs : tabManager.normalTabs }
 
+    /// Раздел «Инкогнито» заперт Face ID.
+    private var isIncognitoLocked: Bool {
+        showingIncognito && IncognitoLock.shared.isLocked && !tabManager.incognitoTabs.isEmpty
+    }
+
+    /// Карточки в коллекции. Пока инкогнито заперто, их нет вовсе: ни заголовков, ни снимков
+    /// не попадает ни на экран (даже на миг во время перехода между разделами), ни в дерево
+    /// доступности — замок не прикрывает карточки, а заменяет их.
+    private var visibleTabs: [Tab] { isIncognitoLocked ? [] : tabs }
+
     init(tabManager: TabManager, incognito: Bool) {
         self.tabManager = tabManager
         self.showingIncognito = incognito
@@ -143,7 +153,8 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         collectionView.layoutIfNeeded()
-        if let selected = tabManager.selectedTab, let index = tabs.firstIndex(where: { $0 === selected }) {
+        if let selected = tabManager.selectedTab, let index = visibleTabs.firstIndex(where: { $0 === selected }),
+           index < collectionView.numberOfItems(inSection: 0) {
             collectionView.scrollToItem(at: IndexPath(item: index, section: 0), at: .centeredVertically, animated: false)
         }
         // Карточки чуть «вырастают» при открытии — дёшево, только transform.
@@ -162,6 +173,9 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
             self.bottomBar.backgroundColor = palette.background
             self.segment.backgroundColor = palette.bar
         }
+        // Замок — раньше перезагрузки: запертый раздел и так без карточек, но экран замка
+        // должен стоять сразу, а не проявляться после перехода.
+        updateLock()
         if animated {
             UIView.animate(withDuration: Theme.mid, animations: changes)
             UIView.transition(with: collectionView, duration: Theme.mid, options: .transitionCrossDissolve) {
@@ -172,14 +186,13 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
             collectionView.reloadData()
         }
         updateCounts()
-        updateLock()
     }
 
     private func updateCounts() {
         segment.setTitle("Вкладки · \(tabManager.normalTabs.count)", forSegmentAt: 0)
         segment.setTitle("Инкогнито · \(tabManager.incognitoTabs.count)", forSegmentAt: 1)
         let empty = tabs.isEmpty
-        emptyStack.isHidden = !empty
+        emptyStack.isHidden = !empty || isIncognitoLocked
         if showingIncognito {
             emptyIcon.image = UIImage(systemName: "eye.slash.fill")
             emptyLabel.text = "Вкладок инкогнито нет.\nИстория, куки и кэш инкогнито не сохраняются и стираются после последней вкладки."
@@ -198,7 +211,8 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
     }
 
     private func updateLock() {
-        let locked = showingIncognito && IncognitoLock.shared.isLocked && !tabs.isEmpty
+        let locked = isIncognitoLocked
+        collectionView.accessibilityElementsHidden = locked
         if locked, lockView == nil {
             let lock = IncognitoLockView()
             lock.onUnlock = { [weak self] in self?.unlock() }
@@ -218,10 +232,24 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
     }
 
     private func unlock() {
-        IncognitoLock.shared.unlock { [weak self] _ in self?.updateLock() }
+        IncognitoLock.shared.unlock { _ in }
     }
 
-    @objc private func lockChanged() { updateLock() }
+    /// Замок закрылся (приложение ушло в фон, пока переключатель открыт) или открылся.
+    @objc private func lockChanged() {
+        guard isViewLoaded else { return }
+        updateLock()
+        if showingIncognito {
+            if IncognitoLock.shared.isLocked {
+                collectionView.reloadData()
+            } else {
+                UIView.transition(with: collectionView, duration: Theme.mid, options: .transitionCrossDissolve) {
+                    self.collectionView.reloadData()
+                }
+            }
+        }
+        updateCounts()
+    }
 
     @objc private func segmentChanged() {
         showingIncognito = segment.selectedSegmentIndex == 1
@@ -237,6 +265,15 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
     // MARK: - Действия
 
     @objc private func addTapped() {
+        if isIncognitoLocked {
+            // Новая вкладка инкогнито открывает браузер в запертом инкогнито — сначала Face ID.
+            IncognitoLock.shared.unlock { [weak self] ok in
+                guard ok, let self else { return }
+                self.tabManager.addTab(incognito: true)
+                self.finish(newTab: true)
+            }
+            return
+        }
         tabManager.addTab(incognito: showingIncognito)
         finish(newTab: true)
     }
@@ -262,7 +299,7 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
     }
 
     private func close(_ tab: Tab) {
-        guard let index = tabs.firstIndex(where: { $0 === tab }) else { return }
+        guard let index = visibleTabs.firstIndex(where: { $0 === tab }) else { return }
         tabManager.close(tab)
         SnapshotCache.shared.set(nil, for: tab)
         collectionView.performBatchUpdates({
@@ -292,12 +329,12 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
     // MARK: - Коллекция
 
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        tabs.count
+        visibleTabs.count
     }
 
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: TabCell.reuseID, for: indexPath) as! TabCell
-        let tab = tabs[indexPath.item]
+        let tab = visibleTabs[indexPath.item]
         cell.configure(with: tab, selected: tab === tabManager.selectedTab, snapshot: SnapshotCache.shared.image(for: tab))
         cell.onClose = { [weak self, weak tab] in
             guard let self, let tab else { return }
@@ -315,7 +352,9 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
-        let tab = tabs[indexPath.item]
+        let visible = visibleTabs
+        guard indexPath.item < visible.count else { return }
+        let tab = visible[indexPath.item]
         if let cell = collectionView.cellForItem(at: indexPath) {
             UIView.animate(withDuration: Theme.fast) { cell.transform = CGAffineTransform(scaleX: 1.04, y: 1.04) }
         }
@@ -418,6 +457,9 @@ final class TabCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         card.alpha = 1
         transform = .identity
         imageView.image = nil
+        // Карточка в очереди на повторное использование не хранит чужой заголовок.
+        titleLabel.text = nil
+        card.accessibilityLabel = nil
     }
 
     func configure(with tab: Tab, selected: Bool, snapshot: UIImage?) {

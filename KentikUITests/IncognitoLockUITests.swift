@@ -211,12 +211,9 @@ final class IncognitoLockUITests: XCTestCase {
     @MainActor
     private func sendToBackgroundAndBack(_ app: XCUIApplication) {
         XCUIDevice.shared.press(.home)
-        let deadline = Date().addingTimeInterval(10)
-        while app.state == .runningForeground, Date() < deadline {
-            usleep(300_000)
-        }
-        XCTAssertNotEqual(app.state, .runningForeground, "приложение не ушло в фон")
-        sleep(2)
+        // app.state в симуляторе iOS 26 остаётся «на экране» ещё долго после ухода в фон —
+        // просто ждём; что приложение правда было в фоне, видно по запросу Face ID и замку.
+        sleep(3)
         app.activate()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10), "приложение не вернулось")
         sleep(1)
