@@ -27,7 +27,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: ~/.kentik-converter
-        key: converter-${{ runner.os }}-${{ runner.arch }}-1cfdcaf042880a5e0027a8fc6f7ebf9ee667acc9-v1
+        key: converter-${{ runner.os }}-${{ runner.arch }}-1cfdcaf042880a5e0027a8fc6f7ebf9ee667acc9-v2
 
     - name: Сборка ConverterTool (SafariConverterLib v4.3.1)
       if: steps.cache.outputs.cache-hit != 'true'
@@ -41,8 +41,11 @@ runs:
         echo "SafariConverterLib HEAD: $HEAD_SHA"
         test "$HEAD_SHA" = "1cfdcaf042880a5e0027a8fc6f7ebf9ee667acc9"
         (cd "$SRC" && swift build -c release --product ConverterTool)
-        mkdir -p ~/.kentik-converter
+        # Рядом с бинарником нужны ресурсные бандлы (swift-psl: список публичных суффиксов).
+        rm -rf ~/.kentik-converter && mkdir -p ~/.kentik-converter
         cp "$SRC/.build/release/ConverterTool" ~/.kentik-converter/ConverterTool
+        cp -R "$SRC"/.build/release/*.bundle ~/.kentik-converter/
+        ls ~/.kentik-converter
 
     - name: Конвертация списков
       id: build
