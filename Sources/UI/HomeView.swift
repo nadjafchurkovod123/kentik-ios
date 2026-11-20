@@ -49,7 +49,8 @@ final class HomeView: UIView, UIContextMenuInteractionDelegate {
         buildIncognitoCard()
 
         tilesTitle.text = "Сайты"
-        tilesTitle.font = .systemFont(ofSize: 13, weight: .semibold)
+        tilesTitle.font = Theme.font(13, .semibold, style: .footnote, maximum: 17)
+        tilesTitle.adjustsFontForContentSizeCategory = true
         tilesTitle.textColor = Theme.dim
         tilesGrid.axis = .vertical
         tilesGrid.spacing = 14
@@ -123,7 +124,8 @@ final class HomeView: UIView, UIContextMenuInteractionDelegate {
 
         searchIcon.tintColor = Theme.dim
         searchIcon.preferredSymbolConfiguration = .init(pointSize: 16, weight: .semibold)
-        searchLabel.font = .systemFont(ofSize: 17)
+        searchLabel.font = Theme.font(17, style: .body, maximum: 22)
+        searchLabel.adjustsFontForContentSizeCategory = true
         searchLabel.textColor = Theme.faint
         [searchIcon, searchLabel].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
@@ -157,7 +159,8 @@ final class HomeView: UIView, UIContextMenuInteractionDelegate {
         let title = UILabel()
         title.setContentHuggingPriority(.defaultLow, for: .horizontal)
         title.text = "Режим инкогнито"
-        title.font = .systemFont(ofSize: 19, weight: .bold)
+        title.font = Theme.font(19, .bold, style: .title3, maximum: 26)
+        title.adjustsFontForContentSizeCategory = true
         title.textColor = Theme.text
         let header = UIStackView(arrangedSubviews: [icon, title])
         header.spacing = 10
@@ -181,7 +184,8 @@ final class HomeView: UIView, UIContextMenuInteractionDelegate {
             let l = UILabel()
             l.text = text
             l.numberOfLines = 0
-            l.font = .systemFont(ofSize: 14)
+            l.font = Theme.font(14, style: .subheadline, maximum: 19)
+            l.adjustsFontForContentSizeCategory = true
             l.textColor = Theme.dim
             let row = UIStackView(arrangedSubviews: [i, l])
             row.spacing = 8
@@ -323,7 +327,8 @@ final class TileView: UIControl {
 
         let label = UILabel()
         label.text = tile.title.isEmpty ? tile.host : tile.title
-        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.font = Theme.font(12, .medium, style: .caption1, maximum: 15)
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = Theme.text
         label.textAlignment = .center
         label.lineBreakMode = .byTruncatingTail

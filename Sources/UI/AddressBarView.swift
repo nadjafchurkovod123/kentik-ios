@@ -69,7 +69,8 @@ final class AddressBarView: UIView {
         pill.clipsToBounds = true
         pill.layer.borderWidth = 1
 
-        titleLabel.font = .systemFont(ofSize: 11, weight: .medium)
+        titleLabel.font = Theme.font(11, .medium, style: .caption2, maximum: 13)
+        titleLabel.adjustsFontForContentSizeCategory = true
         titleLabel.textColor = Theme.dim
         titleLabel.textAlignment = .center
         titleLabel.lineBreakMode = .byTruncatingTail
@@ -77,7 +78,8 @@ final class AddressBarView: UIView {
 
         textField.textColor = Theme.text
         textField.tintColor = Theme.violet
-        textField.font = .systemFont(ofSize: 16)
+        textField.font = Theme.font(16, style: .body, maximum: 20)
+        textField.adjustsFontForContentSizeCategory = true
         textField.keyboardType = .webSearch
         textField.returnKeyType = .go
         textField.autocapitalizationType = .none
@@ -124,7 +126,8 @@ final class AddressBarView: UIView {
         shieldBadge.isAccessibilityElement = false
 
         cancelButton.setTitle("Отмена", for: .normal)
-        cancelButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .medium)
+        cancelButton.titleLabel?.font = Theme.font(16, .medium, style: .body, maximum: 20)
+        cancelButton.titleLabel?.adjustsFontForContentSizeCategory = true
         cancelButton.tintColor = Theme.violet
         cancelButton.accessibilityIdentifier = "cancelEditing"
         cancelButton.alpha = 0
@@ -354,7 +357,10 @@ final class AddressBarView: UIView {
         }
         titleLabel.isHidden = !showTitle
         textField.textAlignment = isEditingAddress ? .natural : .center
-        textField.font = .systemFont(ofSize: showTitle ? 15 : 16, weight: showTitle ? .semibold : .regular)
+        // Растёт с «Крупным текстом», но в строку высотой 46 pt (под заголовком — 21 pt).
+        textField.font = showTitle
+            ? Theme.font(15, .semibold, style: .body, maximum: 17)
+            : Theme.font(16, style: .body, maximum: 20)
         reloadButton.isHidden = isEditingAddress || !hasPage
     }
 

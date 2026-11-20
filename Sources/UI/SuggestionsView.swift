@@ -12,6 +12,16 @@ final class SuggestionsView: UIView, UITableViewDataSource, UITableViewDelegate 
     /// Выбран адрес.
     var onPick: ((URL) -> Void)?
 
+    /// Адресная строка внизу: подсказки прижаты к низу, лучшая — последней, прямо над полем
+    /// ввода (под большим пальцем), а не под «чёлкой».
+    var bottomAligned = false {
+        didSet {
+            guard bottomAligned != oldValue else { return }
+            tableView.reloadData()
+            setNeedsLayout()
+        }
+    }
+
     private let tableView = UITableView(frame: .zero, style: .plain)
     private var items: [Item] = []
     private var palette = ChromePalette.normal
@@ -23,6 +33,7 @@ final class SuggestionsView: UIView, UITableViewDataSource, UITableViewDelegate 
         tableView.separatorColor = Theme.line
         tableView.separatorInset = UIEdgeInsets(top: 0, left: 54, bottom: 0, right: 0)
         tableView.keyboardDismissMode = .onDrag
+        tableView.contentInsetAdjustmentBehavior = .never
         tableView.dataSource = self
         tableView.delegate = self
         tableView.rowHeight = UITableView.automaticDimension
@@ -65,6 +76,32 @@ final class SuggestionsView: UIView, UITableViewDataSource, UITableViewDelegate 
         result += history.map { .history($0) }
         items = result
         tableView.reloadData()
+        setNeedsLayout()
+        layoutIfNeeded()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        alignRows()
+    }
+
+    /// Снизу: отступ сверху на свободное место и прокрутка к последней (лучшей) строке.
+    private func alignRows() {
+        guard bottomAligned else {
+            if tableView.contentInset.top != 0 { tableView.contentInset.top = 0 }
+            return
+        }
+        tableView.layoutIfNeeded()
+        let contentHeight = tableView.contentSize.height
+        let inset = max(0, tableView.bounds.height - contentHeight)
+        if abs(tableView.contentInset.top - inset) > 0.5 { tableView.contentInset.top = inset }
+        let offset = max(-inset, contentHeight - tableView.bounds.height)
+        tableView.setContentOffset(CGPoint(x: 0, y: offset), animated: false)
+    }
+
+    /// Строка таблицы → подсказка (снизу порядок обратный: лучшая ближе к полю ввода).
+    private func item(at row: Int) -> Item {
+        bottomAligned ? items[items.count - 1 - row] : items[row]
     }
 
     // MARK: - Таблица
@@ -77,17 +114,19 @@ final class SuggestionsView: UIView, UITableViewDataSource, UITableViewDelegate 
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
         var content = UIListContentConfiguration.subtitleCell()
         content.textProperties.color = Theme.text
-        content.textProperties.font = .systemFont(ofSize: 16, weight: .medium)
+        content.textProperties.font = Theme.font(16, .medium, style: .body, maximum: 22)
+        content.textProperties.adjustsFontForContentSizeCategory = true
         content.textProperties.numberOfLines = 1
         content.secondaryTextProperties.color = Theme.faint
-        content.secondaryTextProperties.font = .systemFont(ofSize: 13)
+        content.secondaryTextProperties.font = Theme.font(13, style: .footnote, maximum: 18)
+        content.secondaryTextProperties.adjustsFontForContentSizeCategory = true
         content.secondaryTextProperties.numberOfLines = 1
         content.imageProperties.tintColor = Theme.violet
         content.imageProperties.preferredSymbolConfiguration = .init(pointSize: 16, weight: .semibold)
         content.imageProperties.reservedLayoutSize = CGSize(width: 26, height: 26)
         content.imageToTextPadding = 14
 
-        switch items[indexPath.row] {
+        switch item(at: indexPath.row) {
         case .search(let text):
             content.image = UIImage(systemName: "magnifyingglass")
             content.text = text
@@ -114,7 +153,7 @@ final class SuggestionsView: UIView, UITableViewDataSource, UITableViewDelegate 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
         let url: URL?
-        switch items[indexPath.row] {
+        switch item(at: indexPath.row) {
         case .search(let text): url = AddressParser.searchURL(for: text)
         case .open(let u): url = u
         case .history(let entry): url = entry.url

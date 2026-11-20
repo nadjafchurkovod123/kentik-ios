@@ -59,6 +59,8 @@ final class Tab {
     var hiddenByRules = 0
     /// Убрано защитой Guard (слои поверх плеера, стены «выключите AdBlock») за жизнь вкладки.
     var hiddenByGuard = 0
+    /// Страница, на которой уже показана плашка о блокировке (BlockedNoticeBar): одна на страницу.
+    var noticeShownForPage: String?
     /// Всего спрятанных элементов — то, что показывает шторка щита.
     var hiddenElements: Int { hiddenByRules + hiddenByGuard }
 

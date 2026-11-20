@@ -1,11 +1,14 @@
 import UIKit
 
-/// Ненавязчивая плашка внизу страницы: «Всплывающее окно заблокировано · Открыть».
+/// Ненавязчивая плашка вверху страницы: «Всплывающее окно заблокировано · Открыть».
 ///
-/// Показывается, когда защита гасит окно или рекламный переход. «Открыть» — явный выбор
-/// пользователя: окно открывается в новой вкладке, переход — в этой. Плашка живёт поверх
-/// веб-вью своей вкладки (и уходит вместе с ней при переключении), сама прячется через
-/// несколько секунд; повторные блокировки обновляют её, а не плодят новые.
+/// Показывается, когда защита гасит окно или рекламный переход, — один раз на страницу:
+/// попандеры срабатывают на каждое касание плеера, и дальше счёт идёт только в значке щита.
+/// Стоит вверху, подальше от большого пальца (внизу — адресная строка и уведомления), и сама
+/// прячется через несколько секунд; повторные блокировки, пока она на экране, только
+/// обновляют счётчик и не продлевают её. «Открыть» — явный выбор пользователя: окно
+/// открывается в ФОНОВОЙ вкладке (рекламная страница не выскакивает на экран), переход —
+/// в этой. Плашка живёт поверх веб-вью своей вкладки и уходит вместе с ней.
 final class BlockedNoticeBar: UIView {
 
     enum Kind {
@@ -33,6 +36,7 @@ final class BlockedNoticeBar: UIView {
     private var url: URL?
     private var count = 0
     private var hideWork: DispatchWorkItem?
+    private var isDismissing = false
 
     private let icon = UIImageView(image: UIImage(systemName: "hand.raised.slash.fill"))
     private let label = UILabel()
@@ -43,13 +47,29 @@ final class BlockedNoticeBar: UIView {
     @MainActor
     static func show(_ kind: Kind, url: URL?, on tab: Tab) {
         guard let webView = tab.webView else { return }
-        let bar = webView.subviews.compactMap { $0 as? BlockedNoticeBar }.first ?? {
-            let bar = BlockedNoticeBar()
-            bar.attach(to: webView)
-            return bar
-        }()
+        if let bar = webView.subviews.compactMap({ $0 as? BlockedNoticeBar }).first(where: { !$0.isDismissing }) {
+            bar.tab = tab
+            bar.update(kind: kind, url: url)
+            return
+        }
+        // На этой странице плашку уже показывали — дальше только значок щита.
+        let page = pageKey(webView.url)
+        guard tab.noticeShownForPage != page else { return }
+        tab.noticeShownForPage = page
+        let bar = BlockedNoticeBar()
+        bar.attach(to: webView)
         bar.tab = tab
         bar.update(kind: kind, url: url)
+        bar.scheduleHide()
+        UIAccessibility.post(notification: .announcement, argument: bar.label.text)
+    }
+
+    /// Страница без #фрагмента (плашка — одна на страницу).
+    static func pageKey(_ url: URL?) -> String {
+        guard let url else { return "" }
+        var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        components?.fragment = nil
+        return components?.string ?? url.absoluteString
     }
 
     override init(frame: CGRect) {
@@ -79,7 +99,8 @@ final class BlockedNoticeBar: UIView {
         icon.setContentHuggingPriority(.required, for: .horizontal)
 
         label.textColor = Theme.text
-        label.font = .systemFont(ofSize: 14, weight: .medium)
+        label.font = Theme.font(14, .medium, style: .subheadline, maximum: 18)
+        label.adjustsFontForContentSizeCategory = true
         label.adjustsFontSizeToFitWidth = true
         label.minimumScaleFactor = 0.8
         label.numberOfLines = 1
@@ -91,11 +112,12 @@ final class BlockedNoticeBar: UIView {
         open.contentInsets = NSDirectionalEdgeInsets(top: 8, leading: 10, bottom: 8, trailing: 6)
         open.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
             var attributes = attributes
-            attributes.font = .systemFont(ofSize: 15, weight: .semibold)
+            attributes.font = Theme.font(15, .semibold, style: .subheadline, maximum: 19)
             return attributes
         }
         openButton.configuration = open
         openButton.accessibilityIdentifier = "popupBlockedOpen"
+        openButton.accessibilityHint = "Открывает заблокированное в фоновой вкладке"
         openButton.setContentHuggingPriority(.required, for: .horizontal)
         openButton.setContentCompressionResistancePriority(.required, for: .horizontal)
         openButton.addTarget(self, action: #selector(openTapped), for: .touchUpInside)
@@ -131,10 +153,10 @@ final class BlockedNoticeBar: UIView {
         NSLayoutConstraint.activate([
             leadingAnchor.constraint(equalTo: webView.safeAreaLayoutGuide.leadingAnchor, constant: 12),
             trailingAnchor.constraint(equalTo: webView.safeAreaLayoutGuide.trailingAnchor, constant: -12),
-            bottomAnchor.constraint(equalTo: webView.safeAreaLayoutGuide.bottomAnchor, constant: -12),
+            topAnchor.constraint(equalTo: webView.safeAreaLayoutGuide.topAnchor, constant: 12),
         ])
         alpha = 0
-        transform = CGAffineTransform(translationX: 0, y: 24)
+        transform = CGAffineTransform(translationX: 0, y: -24)
         UIView.animate(withDuration: 0.28, delay: 0, usingSpringWithDamping: 0.85, initialSpringVelocity: 0) {
             self.alpha = 1
             self.transform = .identity
@@ -148,8 +170,8 @@ final class BlockedNoticeBar: UIView {
         count += 1
         label.text = count > 1 ? "\(kind.text) · \(count)" : kind.text
         openButton.isHidden = self.url == nil
-        accessibilityLabel = label.text
-        scheduleHide()
+        openButton.accessibilityHint = kind == .popup
+            ? "Открывает окно в фоновой вкладке" : "Переходит по заблокированному адресу"
     }
 
     private func scheduleHide() {
@@ -161,9 +183,10 @@ final class BlockedNoticeBar: UIView {
 
     private func dismiss() {
         hideWork?.cancel()
+        isDismissing = true
         UIView.animate(withDuration: 0.2, delay: 0, options: [.allowUserInteraction, .beginFromCurrentState], animations: {
             self.alpha = 0
-            self.transform = CGAffineTransform(translationX: 0, y: 16)
+            self.transform = CGAffineTransform(translationX: 0, y: -16)
         }, completion: { _ in
             self.removeFromSuperview()
         })
@@ -174,8 +197,10 @@ final class BlockedNoticeBar: UIView {
         dismiss()
         switch kind {
         case .popup:
+            // В фоне: если это всё-таки реклама, она не выскочит поверх страницы.
             if let manager = tab.manager {
-                manager.addTab(url: url, incognito: tab.isIncognito, select: true, opener: tab)
+                manager.addTab(url: url, incognito: tab.isIncognito, select: false, opener: tab)
+                BrowserUI.host?.showToast("Окно открыто в фоновой вкладке", symbol: "square.on.square")
             } else {
                 tab.load(url)
             }

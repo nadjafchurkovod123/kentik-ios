@@ -13,7 +13,8 @@ final class PopupGuardUITests: XCTestCase {
     }
 
     /// (1) Касание фальшивого плеера, который зовёт window.open: вкладка не открывается,
-    /// появляется плашка; «Открыть» — явный выбор пользователя — открывает окно.
+    /// появляется плашка; «Открыть» — явный выбор пользователя — открывает окно в фоновой
+    /// вкладке (текущая страница остаётся на экране).
     @MainActor
     func testPlayerTapPopupIsBlocked() {
         let app = launch("player.html")
@@ -31,8 +32,11 @@ final class PopupGuardUITests: XCTestCase {
         sleep(1)
         XCTAssertEqual(title.label, "Kentik Player · нажато", "открылась новая вкладка")
         open.tap()
-        waitForTitle(app, "Kentik Popup Target")
-        attachScreenshot(app, name: "02-opened-by-user")
+        let tabs = app.buttons["tabsButton"]
+        let two = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "2"), object: tabs)
+        XCTAssertEqual(XCTWaiter().wait(for: [two], timeout: 10), .completed, "окно не открылось в фоновой вкладке")
+        XCTAssertEqual(title.label, "Kentik Player · нажато", "«Открыть» вывело окно поверх страницы")
+        attachScreenshot(app, name: "02-opened-in-background")
     }
 
     /// (2) Плеер в iframe с другого сайта открывает попандер по касанию — блокируется.

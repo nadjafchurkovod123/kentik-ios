@@ -59,7 +59,8 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
 
         emptyIcon.tintColor = Theme.violet
         emptyIcon.preferredSymbolConfiguration = .init(pointSize: 40, weight: .semibold)
-        emptyLabel.font = .systemFont(ofSize: 15)
+        emptyLabel.font = Theme.font(15, style: .body, maximum: 20)
+        emptyLabel.adjustsFontForContentSizeCategory = true
         emptyLabel.textColor = Theme.dim
         emptyLabel.textAlignment = .center
         emptyLabel.numberOfLines = 0
@@ -71,7 +72,8 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
         emptyStack.isUserInteractionEnabled = false
 
         closeAllButton.setTitle("Закрыть все", for: .normal)
-        closeAllButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .medium)
+        closeAllButton.titleLabel?.font = Theme.font(16, .medium, style: .body, maximum: 20)
+        closeAllButton.titleLabel?.adjustsFontForContentSizeCategory = true
         closeAllButton.tintColor = Theme.bad
         closeAllButton.showsMenuAsPrimaryAction = true
         closeAllButton.accessibilityIdentifier = "closeAllTabs"
@@ -86,7 +88,8 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
         addButton.addTarget(self, action: #selector(addTapped), for: .touchUpInside)
 
         doneButton.setTitle("Готово", for: .normal)
-        doneButton.titleLabel?.font = .systemFont(ofSize: 16, weight: .bold)
+        doneButton.titleLabel?.font = Theme.font(16, .bold, style: .body, maximum: 20)
+        doneButton.titleLabel?.adjustsFontForContentSizeCategory = true
         doneButton.tintColor = Theme.violet
         doneButton.accessibilityIdentifier = "doneTabs"
         doneButton.addTarget(self, action: #selector(doneTapped), for: .touchUpInside)
@@ -348,7 +351,8 @@ final class TabCell: UICollectionViewCell, UIGestureRecognizerDelegate {
 
         iconView.contentMode = .scaleAspectFit
         iconView.preferredSymbolConfiguration = .init(pointSize: 11, weight: .semibold)
-        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        titleLabel.font = Theme.font(13, .semibold, style: .footnote, maximum: 16)
+        titleLabel.adjustsFontForContentSizeCategory = true
         titleLabel.textColor = Theme.text
         titleLabel.lineBreakMode = .byTruncatingTail
 

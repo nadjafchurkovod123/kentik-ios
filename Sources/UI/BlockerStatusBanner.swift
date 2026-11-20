@@ -33,7 +33,8 @@ final class BlockerStatusBanner: UIView {
         alpha = 0
         isUserInteractionEnabled = false
 
-        label.font = .systemFont(ofSize: 14, weight: .medium)
+        label.font = Theme.font(14, .medium, style: .subheadline, maximum: 19)
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = Theme.text
         label.numberOfLines = 2
         spinner.color = Theme.violet

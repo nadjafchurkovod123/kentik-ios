@@ -23,7 +23,8 @@ final class ToastView: UIView {
         isUserInteractionEnabled = false
 
         label.text = text
-        label.font = .systemFont(ofSize: 15, weight: .semibold)
+        label.font = Theme.font(15, .semibold, style: .subheadline, maximum: 20)
+        label.adjustsFontForContentSizeCategory = true
         label.textColor = Theme.text
         label.numberOfLines = 2
         icon.image = symbol.flatMap { UIImage(systemName: $0) }

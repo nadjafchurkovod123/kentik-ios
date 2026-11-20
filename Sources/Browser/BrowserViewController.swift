@@ -289,6 +289,7 @@ final class BrowserViewController: UIViewController {
         } else {
             bottomStack.insertArrangedSubview(addressBar, at: 0)
         }
+        suggestions.bottomAligned = position == .bottom
         view.layoutIfNeeded()
         updateChrome()
     }
