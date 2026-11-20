@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Секрет</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 40px 20px; background: #3b0f2e; color: #fbfbfe;
+         font: 17px -apple-system, system-ui, sans-serif; }
+  h1 { color: #ff7ab8; font-size: 34px; margin: 0 0 24px; }
+  p { color: #f3c4dc; font-size: 20px; }
+</style>
+</head>
+<body>
+  <h1 id="heading">Тайна</h1>
+  <p>Фикстура CI для замка инкогнито: ни заголовок, ни текст, ни снимок этой страницы
+     не должны быть видны, пока вкладки инкогнито заперты Face ID.</p>
+<script>
+  var n = new URLSearchParams(location.search).get('n') || '0';
+  document.title = 'Секрет-' + n;
+  document.getElementById('heading').textContent = 'Тайна номер ' + n;
+</script>
+</body>
+</html>
