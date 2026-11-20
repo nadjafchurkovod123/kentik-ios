@@ -84,7 +84,8 @@ final class BlockerStatusBanner: UIView {
         NSLayoutConstraint.activate([
             centerXAnchor.constraint(equalTo: window.centerXAnchor),
             leadingAnchor.constraint(greaterThanOrEqualTo: window.leadingAnchor, constant: 16),
-            bottomAnchor.constraint(equalTo: window.safeAreaLayoutGuide.bottomAnchor, constant: -64),
+            // Над нижней панелью (адресная строка + кнопки) — не закрывает их.
+            bottomAnchor.constraint(equalTo: window.safeAreaLayoutGuide.bottomAnchor, constant: -124),
         ])
         UIView.animate(withDuration: 0.25) { self.alpha = 1 }
     }

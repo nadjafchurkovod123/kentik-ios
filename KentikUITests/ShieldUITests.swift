@@ -49,7 +49,8 @@ final class ShieldUITests: XCTestCase {
         attachScreenshot(app, name: "04-site-off-other-host-blocked")
     }
 
-    /// Выключатель в меню щита: страница перезагружается и реклама появляется.
+    /// Выключатель «На этом сайте» в шторке щита: страница перезагружается и реклама
+    /// появляется; включение обратно снова её прячет.
     @MainActor
     func testShieldMenuToggleReloadsPage() {
         let app = launch(page: "ads.html", extra: ["-KentikTestRules"])
@@ -57,15 +58,32 @@ final class ShieldUITests: XCTestCase {
 
         let shield = app.buttons["shieldButton"]
         XCTAssertTrue(shield.waitForExistence(timeout: 10), "нет кнопки щита")
+        XCTAssertEqual(shield.value as? String, "включена")
         shield.tap()
-        let item = app.buttons.matching(
-            NSPredicate(format: "label == %@ AND identifier != %@", "Блокировка рекламы", "shieldButton")
-        ).firstMatch
-        XCTAssertTrue(item.waitForExistence(timeout: 10), "нет пункта «Блокировка рекламы» в меню")
-        attachScreenshot(app, name: "05-shield-menu")
-        item.tap()
+        let site = app.switches["shieldSiteSwitch"]
+        XCTAssertTrue(site.waitForExistence(timeout: 10), "шторка щита не открылась")
+        sleep(1)
+        attachScreenshot(app, name: "05-shield-sheet")
+        site.tap()
+        let status = app.staticTexts["shieldStatus"]
+        let off = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH %@", "Выключена на"),
+                                            object: status)
+        XCTAssertEqual(XCTWaiter().wait(for: [off], timeout: 10), .completed, "статус щита не сменился")
+
+        // Закрываем шторку касанием по затемнённой части экрана.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
+        XCTAssertTrue(site.waitForNonExistence(timeout: 10), "шторка щита не закрылась")
         waitForTitle(app, Self.visible, timeout: 60)
+        XCTAssertEqual(shield.value as? String, "выключена на сайте")
         attachScreenshot(app, name: "06-shield-off-after-toggle")
+
+        // Включаем обратно — реклама снова спрятана.
+        shield.tap()
+        XCTAssertTrue(site.waitForExistence(timeout: 10), "шторка щита не открылась повторно")
+        site.tap()
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.12)).tap()
+        waitForTitle(app, Self.blocked, timeout: 60)
+        XCTAssertEqual(shield.value as? String, "включена")
     }
 
     // MARK: - Настоящие списки (нужен интернет)

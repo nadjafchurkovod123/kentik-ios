@@ -191,7 +191,7 @@ final class ShieldSheetViewController: UIViewController {
             popupsValue.text = "0"
             redirectsValue.text = "0"
             hiddenValue.text = "0"
-            versionLabel.text = "Списки фильтров: \(FilterLists.version)"
+            versionLabel.text = "Списки фильтров: \(ContentBlocker.shared.activeVersion ?? FilterLists.version)"
         }
     }
 
@@ -216,7 +216,7 @@ final class ShieldSheetViewController: UIViewController {
             self.spinner.stopAnimating()
             self.updateButton.isEnabled = true
             self.versionLabel.text = error == nil
-                ? "Списки обновлены · \(FilterLists.version)"
+                ? "Списки обновлены · \(ContentBlocker.shared.activeVersion ?? FilterLists.version)"
                 : "Не удалось обновить списки"
         }
     }

@@ -96,7 +96,8 @@ final class SettingsModel: ObservableObject {
         message = "Масштаб сайтов сброшен"
     }
 
-    var listsVersion: String { FilterLists.version }
+    /// Версия активных списков (скачанные новее встроенных — показываем их).
+    var listsVersion: String { ContentBlocker.shared.activeVersion ?? FilterLists.version }
 }
 
 /// Экран настроек.
