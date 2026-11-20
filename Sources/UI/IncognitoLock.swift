@@ -51,6 +51,10 @@ final class IncognitoLock {
     /// Проверка владельца (Face ID, при неудаче — код-пароль). Если на устройстве нет
     /// ни Face ID, ни кода-пароля, защищать нечем — считаем проверку пройденной.
     static func authenticate(reason: String, completion: @escaping @MainActor (Bool) -> Void) {
+        if TestHooks.fakeAuth {
+            fakeAuthenticate(reason: reason, completion: completion)
+            return
+        }
         let context = LAContext()
         var error: NSError?
         guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
@@ -64,6 +68,34 @@ final class IncognitoLock {
                 completion(ok)
             }
         }
+    }
+
+    /// Только для UI-тестов (-KentikFakeAuth): запрос «Разрешить / Отменить» вместо Face ID,
+    /// поверх всего, что сейчас на экране, — как настоящий запрос Face ID.
+    private static func fakeAuthenticate(reason: String, completion: @escaping @MainActor (Bool) -> Void) {
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+            .first
+        guard var top = window?.rootViewController else {
+            completion(false)
+            return
+        }
+        while let presented = top.presentedViewController, !presented.isBeingDismissed {
+            top = presented
+        }
+        shared.isAuthenticating = true
+        let finish: @MainActor (Bool) -> Void = { ok in
+            IncognitoLock.shared.isAuthenticating = false
+            completion(ok)
+        }
+        let alert = UIAlertController(title: "Face ID (тест)", message: reason, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "Отменить", style: .cancel) { _ in
+            MainActor.assumeIsolated { finish(false) }
+        })
+        alert.addAction(UIAlertAction(title: "Разрешить", style: .default) { _ in
+            MainActor.assumeIsolated { finish(true) }
+        })
+        top.present(alert, animated: true)
     }
 }
 

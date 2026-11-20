@@ -6,6 +6,11 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      only_testing:
+        description: "Быстрый прогон: только эти UI-тесты через пробел (например KentikUITests/IncognitoLockUITests) и unit-тесты, без настоящих сайтов. Пусто — всё."
+        required: false
+        default: ""
 
 concurrency:
   group: ios-${{ github.ref }}
@@ -111,8 +116,16 @@ jobs:
             | xcbeautify --renderer github-actions
 
       - name: Тесты (unit + UI)
+        env:
+          ONLY_TESTING: ${{ inputs.only_testing }}
         run: |
           set -o pipefail
+          FILTER=(-skip-testing:KentikUITests/RealSitesUITests)
+          if [ -n "$ONLY_TESTING" ]; then
+            FILTER=(-only-testing:KentikTests)
+            for T in $ONLY_TESTING; do FILTER+=("-only-testing:$T"); done
+          fi
+          echo "Набор: ${FILTER[*]}"
           xcodebuild test-without-building \
             -project Kentik.xcodeproj -scheme Kentik \
             -destination "id=$SIM_UDID" \
@@ -120,13 +133,13 @@ jobs:
             -resultBundlePath build/TestResults.xcresult \
             -parallel-testing-enabled NO \
             -retry-tests-on-failure -test-iterations 2 \
-            -skip-testing:KentikUITests/RealSitesUITests \
+            "${FILTER[@]}" \
             | xcbeautify --renderer github-actions
 
       # Настоящие сайты с рекламой (ВКЛ/ВЫКЛ рядом). Живые сайты меняются и бывают
       # недоступны — шаг не валит сборку, его задача — снимки для глаз.
       - name: Настоящие сайты (снимки, может моргать)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && !inputs.only_testing }}
         continue-on-error: true
         timeout-minutes: 30
         run: |
