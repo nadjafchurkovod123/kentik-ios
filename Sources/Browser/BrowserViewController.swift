@@ -79,7 +79,7 @@ final class BrowserViewController: UIViewController {
         if tabManager.tabs.isEmpty {
             if let url = TestHooks.startURL {
                 tabManager.addTab(url: url, incognito: false)
-            } else if !TestHooks.isUITest, let session = SessionStore.shared.load(), !session.tabs.isEmpty {
+            } else if !TestHooks.skipsSession, let session = SessionStore.shared.load(), !session.tabs.isEmpty {
                 restore(session)
             } else {
                 tabManager.addTab(incognito: false)

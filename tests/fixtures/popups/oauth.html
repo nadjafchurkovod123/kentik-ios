@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kentik OAuth</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 40px 20px; background: #1c1b22; color: #fbfbfe;
+         font: 17px -apple-system, system-ui, sans-serif; }
+  h1 { color: #a78bfa; font-size: 26px; margin: 0 0 24px; }
+  a.big, button.big { display: block; width: 100%; box-sizing: border-box; padding: 22px 18px; margin: 0 0 16px;
+          border: 0; border-radius: 14px; background: #2b2a33; color: #a78bfa; font: 600 20px -apple-system, system-ui, sans-serif;
+          text-align: left; text-decoration: none; }
+  p { color: #bfbfc9; }
+</style>
+</head>
+<body>
+  <h1>Вход через Google</h1>
+  <button class="big" id="popup" type="button">Войти в окне</button>
+  <button class="big" id="redirect" type="button">Войти переходом</button>
+  <p>Фикстура CI: окно входа (window.open на accounts.google.com) и переход скриптом на
+     accounts.google.com — защита их не трогает, хотя обычные окна и переходы скриптом на
+     другой сайт блокирует.</p>
+<script>
+  var AUTH = 'https://accounts.google.com/o/oauth2/v2/auth?client_id=kentik-ci-test&response_type=code&scope=openid&redirect_uri=http%3A%2F%2F127.0.0.1%3A8765%2Fpopups%2Ftarget.html';
+  document.getElementById('popup').addEventListener('click', function () {
+    window.open(AUTH, 'kentik_oauth', 'width=480,height=640');
+  });
+  document.getElementById('redirect').addEventListener('click', function () {
+    document.title = 'Kentik OAuth · переход';
+    // Через таймер — уже без жеста пользователя, как делают настоящие кнопки входа.
+    setTimeout(function () { location.href = AUTH; }, 400);
+  });
+</script>
+</body>
+</html>

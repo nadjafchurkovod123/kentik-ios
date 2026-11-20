@@ -101,7 +101,7 @@ final class SessionStore {
     }
 
     func scheduleSave(_ manager: TabManager) {
-        guard !TestHooks.isUITest, didRestore, !saveScheduled else { return }
+        guard !TestHooks.skipsSession, didRestore, !saveScheduled else { return }
         saveScheduled = true
         runAfter(1.5) { [weak self, weak manager] in
             guard let self else { return }
@@ -111,7 +111,7 @@ final class SessionStore {
     }
 
     func saveNow(_ manager: TabManager) {
-        guard !TestHooks.isUITest, didRestore else { return }
+        guard !TestHooks.skipsSession, didRestore else { return }
         let session = snapshot(of: manager)
         // Пустой снимок не затирает непустой файл, если пользователь сам вкладки не закрывал.
         if session.tabs.isEmpty, !closedNormalTabs, let existing = load(), !existing.tabs.isEmpty {

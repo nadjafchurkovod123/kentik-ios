@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kentik Cookie</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 40px 20px; background: #1c1b22; color: #fbfbfe;
+         font: 17px -apple-system, system-ui, sans-serif; }
+  h1 { color: #a78bfa; font-size: 26px; margin: 0 0 24px; }
+  a.big, button.big { display: block; width: 100%; box-sizing: border-box; padding: 22px 18px; margin: 0 0 16px;
+          border: 0; border-radius: 14px; background: #2b2a33; color: #a78bfa; font: 600 20px -apple-system, system-ui, sans-serif;
+          text-align: left; text-decoration: none; }
+  p { color: #bfbfc9; }
+</style>
+</head>
+<body>
+  <h1>Куки</h1>
+  <p id="state">…</p>
+  <p>Фикстура CI: заголовок «COOKIE yes», если у этого сайта есть кука kentik_incognito, иначе «COOKIE no».</p>
+<script>
+  var has = document.cookie.split('; ').indexOf('kentik_incognito=1') >= 0;
+  document.getElementById('state').textContent = has ? 'Кука есть' : 'Куки нет';
+  document.title = 'COOKIE ' + (has ? 'yes' : 'no');
+</script>
+</body>
+</html>

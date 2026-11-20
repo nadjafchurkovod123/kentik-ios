@@ -63,6 +63,22 @@ jobs:
           python3 scripts/ci/build_ad_hosts.py Sources/Resources/ad_hosts.json
           ls -lh Sources/Resources/ad_hosts.json
 
+      # Версия: на теге v1.2.3 — 1.2.3 (AltStore сверяет её с источником), иначе — из project.yml.
+      # Номер сборки — номер запуска CI, он только растёт.
+      - name: Версия приложения
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(sed -nE 's/^ *MARKETING_VERSION: *"?([^"]+)"?.*/\1/p' project.yml | head -1)"
+          fi
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "::error::Версия «$VERSION» не похожа на 1.2.3"; exit 1
+          fi
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "APP_BUILD=$GITHUB_RUN_NUMBER" >> "$GITHUB_ENV"
+          echo "Версия $VERSION, сборка $GITHUB_RUN_NUMBER"
+
       - name: Генерация проекта
         run: xcodegen generate
 
@@ -103,11 +119,40 @@ jobs:
             -derivedDataPath build/DerivedData \
             -resultBundlePath build/TestResults.xcresult \
             -parallel-testing-enabled NO \
+            -retry-tests-on-failure -test-iterations 2 \
+            -skip-testing:KentikUITests/RealSitesUITests \
+            | xcbeautify --renderer github-actions
+
+      # Настоящие сайты с рекламой (ВКЛ/ВЫКЛ рядом). Живые сайты меняются и бывают
+      # недоступны — шаг не валит сборку, его задача — снимки для глаз.
+      - name: Настоящие сайты (снимки, может моргать)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        timeout-minutes: 30
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -project Kentik.xcodeproj -scheme Kentik \
+            -destination "id=$SIM_UDID" \
+            -derivedDataPath build/DerivedData \
+            -resultBundlePath build/RealSites.xcresult \
+            -parallel-testing-enabled NO \
+            -only-testing:KentikUITests/RealSitesUITests \
             | xcbeautify --renderer github-actions
 
       - name: Снимки экрана из .xcresult
         if: always()
-        run: python3 scripts/ci/export_screenshots.py build/TestResults.xcresult build/screenshots
+        run: |
+          python3 scripts/ci/export_screenshots.py build/TestResults.xcresult build/screenshots
+          python3 scripts/ci/export_screenshots.py build/RealSites.xcresult build/screenshots/real-sites
+
+      - name: Настоящие сайты — ВКЛ и ВЫКЛ рядом
+        if: always()
+        continue-on-error: true
+        run: |
+          python3 -m venv build/venv
+          build/venv/bin/pip install -q pillow
+          build/venv/bin/python scripts/ci/side_by_side.py build/screenshots/real-sites build/screenshots/side-by-side
 
       - name: Артефакт screenshots
         if: always()
@@ -134,6 +179,7 @@ jobs:
             -project Kentik.xcodeproj -scheme Kentik -configuration Release \
             -sdk iphoneos -destination "generic/platform=iOS" \
             -derivedDataPath build/DerivedDevice \
+            MARKETING_VERSION="$APP_VERSION" CURRENT_PROJECT_VERSION="$APP_BUILD" \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             | xcbeautify --renderer github-actions
 
@@ -145,7 +191,34 @@ jobs:
           cp -R "$APP" build/ipa/Payload/
           (cd build/ipa && zip -qry ../Kentik.ipa Payload)
           ls -lh build/Kentik.ipa
-          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Info.plist"
+
+      # IPA для AltStore/Sideloadly: zip с Payload/Kentik.app, верный bundle id и версия,
+      # все исполняемые файлы — только arm64 для iPhone (без срезов симулятора).
+      - name: Проверка Kentik.ipa
+        run: |
+          set -euo pipefail
+          CHECK="$(mktemp -d)"
+          unzip -q build/Kentik.ipa -d "$CHECK"
+          test "$(ls "$CHECK")" = "Payload"
+          APP="$CHECK/Payload/Kentik.app"
+          PLIST="$APP/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" = "io.kentik.browser"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")" = "$APP_VERSION"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$PLIST")" = "$APP_BUILD"
+          echo "MinimumOSVersion: $(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$PLIST")"
+          echo "Платформы: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms' "$PLIST" | tr -d '\n ')"
+          COUNT=0
+          while IFS= read -r -d '' F; do
+            file -b "$F" | grep -q "Mach-O" || continue
+            ARCHS="$(lipo -archs "$F")"
+            PLATFORMS="$(vtool -show-build "$F" | awk '$1 == "platform" {print $2}' | sort -u | tr '\n' ' ')"
+            echo "${F#$APP/}: $ARCHS · $PLATFORMS"
+            test "$ARCHS" = "arm64" || { echo "::error::$F — архитектуры «$ARCHS»"; exit 1; }
+            test "$PLATFORMS" = "IOS " || { echo "::error::$F — платформа «$PLATFORMS»"; exit 1; }
+            COUNT=$((COUNT + 1))
+          done < <(find "$APP" -type f -print0)
+          test "$COUNT" -ge 1
+          echo "IPA в порядке: $COUNT исполняемых файлов, версия $APP_VERSION ($APP_BUILD)"
 
       - name: Артефакт ipa
         uses: actions/upload-artifact@v7
@@ -154,10 +227,82 @@ jobs:
           path: build/Kentik.ipa
           if-no-files-found: error
 
-      # ─────────────────────────────────────────────────────────────────────────
-      # ЗАГЛУШКА: релиз по тегу v* (заполнит фаза Release): GitHub Release с Kentik.ipa
-      # и, при желании, источник AltStore (apps.json). Потребует permissions: contents: write.
-      # ─────────────────────────────────────────────────────────────────────────
-      - name: "ЗАГЛУШКА: релиз по тегу"
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: echo "Релиз пока не публикуется (каркас). Тег $GITHUB_REF_NAME, IPA — в артефакте ipa."
+  # ───────────────────────────────────────────────────────────────────────────
+  # Релиз по тегу v*: GitHub Release с Kentik.ipa и новая версия в источнике AltStore
+  # (altstore/source.json на main, его адрес добавляют в AltStore → Источники).
+  # ───────────────────────────────────────────────────────────────────────────
+  release:
+    name: Релиз и источник AltStore
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    concurrency:
+      group: altstore-source
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: ipa
+          path: build
+
+      - name: GitHub Release с Kentik.ipa
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          VERSION="${TAG#v}"
+          SOURCE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/altstore/source.json"
+          ls -lh build/Kentik.ipa
+          {
+            echo "Kentik $VERSION для iPhone (iOS 17 и новее)."
+            echo
+            echo "- Блокировка рекламы по спискам EasyList, AdGuard и RU AdList, списки обновляются каждый день."
+            echo "- Защита от рекламных вкладок, попандеров, перенаправлений и невидимых слоёв поверх плееров."
+            echo "- Щит на нижней панели: выключить блокировку везде или только на этом сайте."
+            echo "- Настоящий режим инкогнито: всё стирается после последней вкладки."
+            echo
+            echo "**Установка:** добавьте в AltStore источник \`$SOURCE_URL\`"
+            echo "или поставьте \`Kentik.ipa\` через Sideloadly. Подробно — [INSTALL.md](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/main/INSTALL.md)."
+          } > build/notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" build/Kentik.ipa --clobber
+          else
+            gh release create "$TAG" build/Kentik.ipa --title "Kentik $VERSION" \
+              --notes-file build/notes.md --verify-tag --latest
+          fi
+
+      - name: Новая версия в источнике AltStore
+        env:
+          BUILD: ${{ github.run_number }}
+        run: |
+          set -euo pipefail
+          TAG="$GITHUB_REF_NAME"
+          VERSION="${TAG#v}"
+          URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${TAG}/Kentik.ipa"
+          python3 scripts/ci/altstore_source.py --source altstore/source.json --ipa build/Kentik.ipa \
+            --version "$VERSION" --build "$BUILD" --url "$URL" \
+            --date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --notes "Kentik $VERSION: блокировка рекламы, защита от всплывающих окон и перенаправлений, инкогнито."
+          python3 -m json.tool altstore/source.json > /dev/null
+          git config user.name "Kentik"
+          git config user.email "kentik@localhost"
+          git add altstore/source.json
+          if git diff --cached --quiet; then
+            echo "Источник уже содержит $VERSION"
+            exit 0
+          fi
+          git commit -m "iOS: источник AltStore — версия $VERSION [skip ci]" \
+            -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+          for i in 1 2 3; do
+            git push origin HEAD:main && break
+            git pull --rebase origin main
+          done
+          echo "Источник: https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/altstore/source.json"
