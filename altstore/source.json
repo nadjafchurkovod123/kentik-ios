@@ -1,0 +1,31 @@
+{
+  "name": "Kentik",
+  "identifier": "io.kentik.source",
+  "subtitle": "Личный браузер с блокировкой всей рекламы",
+  "description": "Источник AltStore для Kentik — браузера для iPhone с блокировкой рекламы, защитой от всплывающих окон и настоящим режимом инкогнито. Новые версии появляются здесь автоматически после каждого релиза.",
+  "iconURL": "https://raw.githubusercontent.com/nadjafchurkovod123/kentik-ios/main/altstore/icon.png",
+  "website": "https://github.com/nadjafchurkovod123/kentik-ios",
+  "tintColor": "#A78BFA",
+  "featuredApps": [
+    "io.kentik.browser"
+  ],
+  "apps": [
+    {
+      "name": "Kentik",
+      "bundleIdentifier": "io.kentik.browser",
+      "developerName": "Kentik",
+      "subtitle": "Браузер без рекламы",
+      "localizedDescription": "Kentik — личный браузер для iPhone.\n\n• Блокировка всей рекламы: баннеры, видеореклама, счётчики — по спискам EasyList, AdGuard и RU AdList, которые обновляются каждый день.\n• Защита для сайтов с сериалами: касание плеера не открывает рекламные вкладки и попандеры, реклама не уводит страницу на другой сайт, невидимые слои поверх видео убираются.\n• Выключатель как в AdBlock: щит на нижней панели — выключить везде или только на этом сайте.\n• Настоящий инкогнито: отдельное хранилище, куки и история стираются после последней вкладки, по желанию — замок Face ID.\n• Фоновые вкладки по долгому нажатию, режим чтения, загрузки в «Файлы», тёмная тема.",
+      "iconURL": "https://raw.githubusercontent.com/nadjafchurkovod123/kentik-ios/main/altstore/icon.png",
+      "tintColor": "#A78BFA",
+      "category": "utilities",
+      "screenshots": [],
+      "versions": [],
+      "appPermissions": {
+        "entitlements": [],
+        "privacy": {}
+      }
+    }
+  ],
+  "news": []
+}
