@@ -10,16 +10,26 @@
          font: 17px -apple-system, system-ui, sans-serif; }
   h1 { color: #ff7ab8; font-size: 34px; margin: 0 0 24px; }
   p { color: #f3c4dc; font-size: 20px; }
+  input { width: 100%; box-sizing: border-box; padding: 14px; font-size: 18px; border-radius: 10px;
+          border: 1px solid #ff7ab8; background: #2a0a20; color: #fbfbfe; }
 </style>
 </head>
 <body>
   <h1 id="heading">Тайна</h1>
   <p>Фикстура CI для замка инкогнито: ни заголовок, ни текст, ни снимок этой страницы
      не должны быть видны, пока вкладки инкогнито заперты Face ID.</p>
+  <input id="field" type="text" aria-label="Поле ввода" autocomplete="off">
+  <p id="state">Поле: не в фокусе</p>
 <script>
   var n = new URLSearchParams(location.search).get('n') || '0';
   document.title = 'Секрет-' + n;
   document.getElementById('heading').textContent = 'Тайна номер ' + n;
+  // Фокус поля виден тесту текстом на странице: поле, которое замок не лишил фокуса,
+  // после разблокировки так и стоит «в фокусе».
+  var field = document.getElementById('field');
+  var state = document.getElementById('state');
+  field.addEventListener('focus', function () { state.textContent = 'Поле: в фокусе'; });
+  field.addEventListener('blur', function () { state.textContent = 'Поле: не в фокусе'; });
 </script>
 </body>
 </html>
