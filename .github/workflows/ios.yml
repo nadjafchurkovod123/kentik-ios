@@ -274,13 +274,22 @@ jobs:
           VERSION="${TAG#v}"
           SOURCE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/main/altstore/source.json"
           ls -lh build/Kentik.ipa
+          # Что нового в версии — release-notes/<версия>.md на main (строки «- …»); нет файла —
+          # общее описание приложения.
+          WHATS_NEW="release-notes/$VERSION.md"
           {
             echo "Kentik $VERSION для iPhone (iOS 17 и новее)."
             echo
-            echo "- Блокировка рекламы по спискам EasyList, AdGuard и RU AdList, списки обновляются каждый день."
-            echo "- Защита от рекламных вкладок, попандеров, перенаправлений и невидимых слоёв поверх плееров."
-            echo "- Щит на нижней панели: выключить блокировку везде или только на этом сайте."
-            echo "- Настоящий режим инкогнито: всё стирается после последней вкладки."
+            if [ -s "$WHATS_NEW" ]; then
+              echo "**Что нового:**"
+              echo
+              cat "$WHATS_NEW"
+            else
+              echo "- Блокировка рекламы по спискам EasyList, AdGuard и RU AdList, списки обновляются каждый день."
+              echo "- Защита от рекламных вкладок, попандеров, перенаправлений и невидимых слоёв поверх плееров."
+              echo "- Щит на нижней панели: выключить блокировку везде или только на этом сайте."
+              echo "- Настоящий режим инкогнито: всё стирается после последней вкладки."
+            fi
             echo
             echo "**Установка:** добавьте в AltStore источник \`$SOURCE_URL\`"
             echo "или поставьте \`Kentik.ipa\` через Sideloadly. Подробно — [INSTALL.md](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/main/INSTALL.md)."
@@ -300,10 +309,16 @@ jobs:
           TAG="$GITHUB_REF_NAME"
           VERSION="${TAG#v}"
           URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${TAG}/Kentik.ipa"
+          WHATS_NEW="release-notes/$VERSION.md"
+          if [ -s "$WHATS_NEW" ]; then
+            NOTES="$(sed -E 's/^- /• /' "$WHATS_NEW")"
+          else
+            NOTES="Kentik $VERSION: блокировка рекламы, защита от всплывающих окон и перенаправлений, инкогнито."
+          fi
           python3 scripts/ci/altstore_source.py --source altstore/source.json --ipa build/Kentik.ipa \
             --version "$VERSION" --build "$BUILD" --url "$URL" \
             --date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --notes "Kentik $VERSION: блокировка рекламы, защита от всплывающих окон и перенаправлений, инкогнито."
+            --notes "$NOTES"
           python3 -m json.tool altstore/source.json > /dev/null
           git config user.name "Kentik"
           git config user.email "kentik@localhost"
