@@ -423,6 +423,16 @@ final class BrowserViewController: UIViewController {
     }
 
     private func newTab(incognito: Bool) {
+        if incognito, IncognitoLock.shared.isLocked {
+            // Новая вкладка инкогнито при запертом инкогнито — сначала Face ID, как «+»
+            // в переключателе вкладок; отмена — ничего не открывается.
+            IncognitoLock.shared.unlock { [weak self] ok in
+                guard ok, let self else { return }
+                self.tabManager.addTab(incognito: true)
+                self.focusAddressBar()
+            }
+            return
+        }
         tabManager.addTab(incognito: incognito)
         focusAddressBar()
     }
@@ -603,11 +613,15 @@ final class BrowserViewController: UIViewController {
     }
 
     @objc private func lockChanged() {
+        if IncognitoLock.shared.isLocked {
+            endIncognitoEditing()
+        }
         if IncognitoLock.shared.isLocked, isShowingIncognitoContent {
             // Запираем: убрать всё, что показывает инкогнито поверх страницы (чтение, щит,
             // вкладки), и ввод адреса — замок закрывает только область страницы.
             // Переключатель вкладок не закрываем: он сам прячет раздел «Инкогнито» за замком.
             if addressBar.textField.isFirstResponder { addressBar.textField.resignFirstResponder() }
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             if let presented = presentedViewController, presented !== tabSwitcher { dismiss(animated: false) }
         }
         updateLockOverlay(autoPrompt: false)
@@ -745,6 +759,20 @@ final class BrowserViewController: UIViewController {
         shieldSheet?.refresh()
     }
 
+    /// Запертые вкладки инкогнито не держат клавиатуру: ни поле на странице, ни «Найти на странице».
+    /// Спрятанная веб-вью фокус не теряет, и по возвращении из фона iOS вернула бы клавиатуру
+    /// (с подсказками автозаполнения для сайта или со словом поиска и числом совпадений),
+    /// а набранное ушло бы в спрятанную страницу.
+    private func endIncognitoEditing() {
+        for tab in tabManager.incognitoTabs {
+            guard let webView = tab.webView else { continue }
+            if let find = webView.findInteraction, find.isFindNavigatorVisible {
+                find.dismissFindNavigator()
+            }
+            webView.endEditing(true)
+        }
+    }
+
     /// Страница под замком не рисуется вовсе и не видна VoiceOver: замок её не прикрывает,
     /// а заменяет (иначе текст страницы оставался бы в дереве доступности под замком).
     private func setPageHidden(_ hidden: Bool, for tab: Tab) {
@@ -755,6 +783,7 @@ final class BrowserViewController: UIViewController {
     private func updateLockOverlay(autoPrompt: Bool) {
         let locked = isIncognitoLocked
         if let tab = tabManager.selectedTab { setPageHidden(locked, for: tab) }
+        if locked { endIncognitoEditing() }
         homeView.accessibilityElementsHidden = locked
         if locked {
             if lockView == nil {

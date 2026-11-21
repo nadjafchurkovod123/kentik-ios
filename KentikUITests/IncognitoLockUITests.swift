@@ -35,6 +35,16 @@ final class IncognitoLockUITests: XCTestCase {
                        "Face ID спросили, хотя на экране обычная вкладка")
         attachScreenshot(app, name: "lock-01-normal-tab-after-background")
 
+        // «Новая вкладка инкогнито» из меню при запертом инкогнито сначала спрашивает Face ID;
+        // отмена — остаёмся на обычной вкладке, новой вкладки инкогнито нет.
+        openMenuItem(app, "Новая вкладка инкогнито")
+        let menuAlert = fakeAuthAlert(app)
+        XCTAssertTrue(menuAlert.waitForExistence(timeout: 5), "«Новая вкладка инкогнито» не спросила Face ID")
+        if menuAlert.exists { menuAlert.buttons["Отменить"].tap() }
+        waitForTitle(app, "Kentik Hello", timeout: 10)
+        XCTAssertEqual(app.buttons["tabsButton"].value as? String, "1",
+                       "после отмены Face ID открылась вкладка: на экране не обычная вкладка")
+
         app.buttons["tabsButton"].tap()
         XCTAssertTrue(segment.waitForExistence(timeout: 10), "нет переключателя вкладок")
         segment.buttons.element(boundBy: 1).tap()
@@ -142,12 +152,91 @@ final class IncognitoLockUITests: XCTestCase {
         sleep(1)
         attachScreenshot(app, name: "lock-21-browser-locked")
 
+        // «+» на панели в запертой вкладке инкогнито сначала спрашивает Face ID;
+        // отмена — новой вкладки нет.
+        app.buttons["newTabButton"].tap()
+        let plusAlert = fakeAuthAlert(app)
+        XCTAssertTrue(plusAlert.waitForExistence(timeout: 5), "«+» в запертом инкогнито не спросил Face ID")
+        assertIncognitoHidden(app, "под запросом Face ID от «+» на панели")
+        if plusAlert.exists { plusAlert.buttons["Отменить"].tap() }
+        XCTAssertTrue(unlockButton.waitForExistence(timeout: 5), "после отмены «+» нет замка")
+        XCTAssertEqual(app.buttons["tabsButton"].value as? String, "2",
+                       "после отмены Face ID от «+» вкладок инкогнито не две")
+
         unlock(app)
         waitForTitle(app, "Секрет-2")
         XCTAssertTrue(app.webViews.staticTexts["Тайна номер 2"].waitForExistence(timeout: 10),
                       "после разблокировки страница не видна")
         sleep(1)
         attachScreenshot(app, name: "lock-22-browser-unlocked")
+    }
+
+    /// В поле на странице инкогнито стоит курсор, приложение уходит в фон. Замок забирает
+    /// у страницы фокус: по возвращении (и после отмены Face ID) клавиатура не появляется —
+    /// ни подсказок автозаполнения, ни ввода в спрятанную страницу; после разблокировки
+    /// поле не в фокусе.
+    @MainActor
+    func testLockTakesFocusFromPageField() {
+        let app = launchWithTwoSecrets()
+        XCTAssertTrue(app.webViews.staticTexts["Тайна номер 2"].waitForExistence(timeout: 30), "страница не отрисовалась")
+        let field = app.webViews.textFields["Поле ввода"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "на странице нет поля")
+        field.tap()
+        XCTAssertTrue(app.webViews.staticTexts["Поле: в фокусе"].waitForExistence(timeout: 10),
+                      "поле страницы не получило фокус")
+        field.typeText("abc")
+        sleep(1)
+        attachScreenshot(app, name: "lock-30-page-field-focused")
+
+        sendToBackgroundAndBack(app)
+        let alert = fakeAuthAlert(app)
+        XCTAssertTrue(alert.waitForExistence(timeout: 10), "после возвращения Face ID не спросили")
+        if alert.exists { alert.buttons["Отменить"].tap() }
+        sleep(2)
+        attachScreenshot(app, name: "lock-31-page-field-face-id-cancelled")
+        XCTAssertTrue(app.buttons["unlockIncognito"].waitForExistence(timeout: 5), "в браузере нет замка")
+        assertIncognitoHidden(app, "замок после поля страницы")
+        assertNoKeyboard(app, "замок после поля страницы")
+
+        unlock(app)
+        XCTAssertTrue(app.webViews.staticTexts["Тайна номер 2"].waitForExistence(timeout: 10),
+                      "после разблокировки страница не видна")
+        sleep(1)
+        attachScreenshot(app, name: "lock-32-page-field-unlocked")
+        XCTAssertTrue(app.webViews.staticTexts["Поле: не в фокусе"].exists,
+                      "поле страницы осталось в фокусе под замком")
+        assertNoKeyboard(app, "после разблокировки")
+    }
+
+    /// Открыт «Найти на странице» со словом со страницы, приложение уходит в фон. Замок
+    /// закрывает поиск: по возвращении ни поля поиска со словом, ни клавиатуры.
+    @MainActor
+    func testLockClosesFindInPage() {
+        let app = launchWithTwoSecrets()
+        XCTAssertTrue(app.webViews.staticTexts["Тайна номер 2"].waitForExistence(timeout: 30), "страница не отрисовалась")
+        openMenuItem(app, "Найти на странице")
+        sleep(1)
+        app.typeText("Тайна")
+        sleep(1)
+        attachScreenshot(app, name: "lock-40-find-open")
+        XCTAssertFalse(findFieldsWithSecret(app).isEmpty, "поиск по странице не открылся со словом «Тайна»")
+
+        sendToBackgroundAndBack(app)
+        let alert = fakeAuthAlert(app)
+        XCTAssertTrue(alert.waitForExistence(timeout: 10), "после возвращения Face ID не спросили")
+        if alert.exists { alert.buttons["Отменить"].tap() }
+        sleep(2)
+        attachScreenshot(app, name: "lock-41-find-face-id-cancelled")
+        XCTAssertTrue(app.buttons["unlockIncognito"].waitForExistence(timeout: 5), "в браузере нет замка")
+        let fields = findFieldsWithSecret(app)
+        XCTAssertTrue(fields.isEmpty, "поиск по странице со словом остался под замком: \(fields)")
+        assertIncognitoHidden(app, "замок после поиска по странице")
+        assertNoKeyboard(app, "замок после поиска по странице")
+
+        unlock(app)
+        sleep(1)
+        attachScreenshot(app, name: "lock-42-find-unlocked")
+        XCTAssertTrue(findFieldsWithSecret(app).isEmpty, "поиск по странице пережил замок")
     }
 
     // MARK: - Проверки
@@ -184,6 +273,31 @@ final class IncognitoLockUITests: XCTestCase {
         assertIncognitoHidden(app, context, file: file, line: line)
         XCTAssertEqual(app.buttons.matching(identifier: "closeTab").count, 0,
                        "\(context): карточки инкогнито остались в дереве доступности", file: file, line: line)
+    }
+
+    /// Клавиатуры нет (ни для поля страницы, ни для поиска по странице).
+    @MainActor
+    private func assertNoKeyboard(_ app: XCUIApplication, _ context: String,
+                                  file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(app.keyboards.count, 0, "\(context): клавиатура на экране", file: file, line: line)
+    }
+
+    /// Поля ввода (в том числе поиск по странице), в которых набрано слово со страницы инкогнито.
+    /// Один снимок дерева, а не запросы по индексу: поле поиска появляется и исчезает
+    /// вместе с клавиатурой, и элемент по индексу успевает пропасть между запросами.
+    @MainActor
+    private func findFieldsWithSecret(_ app: XCUIApplication) -> [String] {
+        guard let root = try? app.snapshot() else { return [] }
+        var found: [String] = []
+        var stack: [XCUIElementSnapshot] = [root]
+        while let node = stack.popLast() {
+            if node.elementType == .textField || node.elementType == .searchField,
+               let value = node.value as? String, value.contains("Тайна") {
+                found.append(value)
+            }
+            stack.append(contentsOf: node.children)
+        }
+        return found
     }
 
     // MARK: - Вспомогательное
