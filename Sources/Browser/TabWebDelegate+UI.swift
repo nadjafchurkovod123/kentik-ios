@@ -119,10 +119,10 @@ extension TabWebDelegate {
     }
 
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
-        DownloadManager.shared.track(download)
+        DownloadManager.shared.track(download, incognito: tab?.isIncognito ?? false)
     }
 
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
-        DownloadManager.shared.track(download)
+        DownloadManager.shared.track(download, incognito: tab?.isIncognito ?? false)
     }
 }

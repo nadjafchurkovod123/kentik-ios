@@ -26,6 +26,14 @@ final class DownloadsViewController: UITableViewController, QLPreviewControllerD
             primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) }
         )
         reload()
+        NotificationCenter.default.addObserver(self, selector: #selector(lockChanged),
+                                               name: .incognitoLockChanged, object: nil)
+    }
+
+    @objc private func lockChanged() {
+        // Просмотр открытого файла закрываем: список под ним может сократиться.
+        if IncognitoLock.shared.isLocked, presentedViewController != nil { dismiss(animated: false) }
+        reload()
     }
 
     private func reload() {
@@ -33,7 +41,9 @@ final class DownloadsViewController: UITableViewController, QLPreviewControllerD
         let urls = (try? FileManager.default.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey, .isDirectoryKey],
             options: [.skipsHiddenFiles])) ?? []
+        // Скачанное из инкогнито не показываем, пока инкогнито заперто.
         files = urls.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) != true }
+            .filter { !DownloadManager.shared.isHiddenByLock($0) }
             .sorted {
                 let a = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
                 let b = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast

@@ -193,6 +193,16 @@ final class UIModelTests: XCTestCase {
         XCTAssertEqual(DownloadManager.uniqueURL(in: dir, for: "a/b:c").lastPathComponent, "a_b_c")
     }
 
+    /// Загрузка из запертого инкогнито: сообщение поверх замка без имени файла.
+    func testDownloadToastHidesNameUnderIncognitoLock() {
+        XCTAssertEqual(DownloadManager.toastText(.started, fileName: "тайна.pdf", hideName: false), "Загрузка: тайна.pdf")
+        XCTAssertEqual(DownloadManager.toastText(.saved, fileName: "тайна.pdf", hideName: false), "Сохранено: тайна.pdf")
+        let started = DownloadManager.toastText(.started, fileName: "тайна.pdf", hideName: true)
+        let saved = DownloadManager.toastText(.saved, fileName: "тайна.pdf", hideName: true)
+        XCTAssertFalse(started.contains("тайна"), started)
+        XCTAssertFalse(saved.contains("тайна"), saved)
+    }
+
     func testTilesPinnedFirstAndHiddenSkipped() {
         let defaults = UserDefaults(suiteName: "KentikTests-\(UUID().uuidString)")!
         let history = HistoryStore(fileURL: nil, persist: false)

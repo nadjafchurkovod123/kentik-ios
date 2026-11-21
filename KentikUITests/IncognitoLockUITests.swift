@@ -283,11 +283,21 @@ final class IncognitoLockUITests: XCTestCase {
     }
 
     /// Поля ввода (в том числе поиск по странице), в которых набрано слово со страницы инкогнито.
+    /// Один снимок дерева, а не запросы по индексу: поле поиска появляется и исчезает
+    /// вместе с клавиатурой, и элемент по индексу успевает пропасть между запросами.
     @MainActor
     private func findFieldsWithSecret(_ app: XCUIApplication) -> [String] {
-        (app.searchFields.allElementsBoundByIndex + app.textFields.allElementsBoundByIndex)
-            .compactMap { $0.value as? String }
-            .filter { $0.contains("Тайна") }
+        guard let root = try? app.snapshot() else { return [] }
+        var found: [String] = []
+        var stack: [XCUIElementSnapshot] = [root]
+        while let node = stack.popLast() {
+            if node.elementType == .textField || node.elementType == .searchField,
+               let value = node.value as? String, value.contains("Тайна") {
+                found.append(value)
+            }
+            stack.append(contentsOf: node.children)
+        }
+        return found
     }
 
     // MARK: - Вспомогательное
