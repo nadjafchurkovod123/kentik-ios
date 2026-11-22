@@ -41,6 +41,7 @@ enum WebViewFactory {
             configuration.userContentController = userContent
             ContentBlocker.shared.install(on: userContent, host: nil, incognito: tab.isIncognito)
             GuardInstaller.install(on: configuration, tab: tab)
+            DiagProbe.install(on: configuration)
         } else {
             configuration = WKWebViewConfiguration()
             configuration.websiteDataStore = tab.isIncognito
@@ -59,6 +60,7 @@ enum WebViewFactory {
             // Хуки модулей Blocking и Guard.
             ContentBlocker.shared.install(on: userContent, host: nil, incognito: tab.isIncognito)
             GuardInstaller.install(on: configuration, tab: tab)
+            DiagProbe.install(on: configuration)
         }
 
         let webView = WKWebView(frame: .zero, configuration: configuration)

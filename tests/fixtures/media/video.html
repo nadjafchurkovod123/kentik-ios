@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kentik Video</title>
+<!--
+  Видео прямо на странице (для замка инкогнито): кнопки «На весь экран» (контейнер,
+  requestFullscreen), «Системный» (webkitEnterFullscreen) и «PiP». Заголовок повторяет
+  состояние: «Kentik Video · идёт · весь экран · PiP».
+-->
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 12px; background: #12101a; color: #fbfbfe; font: 16px -apple-system, system-ui, sans-serif; }
+  #box { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+  video { width: 100%; height: 100%; display: block; background: #000; }
+  .row { display: flex; gap: 8px; margin-top: 10px; }
+  button { flex: 1; font: 600 15px -apple-system, system-ui, sans-serif; color: #fff; background: #4b2a85; border: 0; border-radius: 9px; padding: 12px 4px; }
+</style>
+</head>
+<body>
+  <div id="box"><video id="v" playsinline muted loop preload="auto" src="hls/index.m3u8"></video></div>
+  <div class="row">
+    <button id="play" type="button">Пуск</button>
+    <button id="fs" type="button">На весь экран</button>
+    <button id="nfs" type="button">Системный</button>
+    <button id="pip" type="button">PiP</button>
+  </div>
+  <p id="st">ожидание</p>
+  <script>
+  (function () {
+    var v = document.getElementById('v'), box = document.getElementById('box'), st = document.getElementById('st');
+    function fsEl() { return document.fullscreenElement || document.webkitFullscreenElement; }
+    function report() {
+      var parts = ['Kentik Video', v.paused ? 'пауза' : 'идёт'];
+      if (fsEl()) parts.push('весь экран');
+      else if (v.webkitDisplayingFullscreen) parts.push('системный');
+      if (v.webkitPresentationMode === 'picture-in-picture' || document.pictureInPictureElement === v) parts.push('PiP');
+      var t = parts.join(' · ');
+      if (document.title !== t) document.title = t;
+      st.textContent = t + ' ' + Math.round(v.currentTime);
+    }
+    ['play', 'pause', 'playing', 'webkitpresentationmodechanged', 'webkitbeginfullscreen', 'webkitendfullscreen',
+     'enterpictureinpicture', 'leavepictureinpicture'].forEach(function (e) { v.addEventListener(e, report); });
+    document.addEventListener('fullscreenchange', report);
+    document.addEventListener('webkitfullscreenchange', report);
+    setInterval(report, 700);
+    function play() { v.muted = true; var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+    document.getElementById('play').onclick = play;
+    document.getElementById('fs').onclick = function () {
+      play();
+      var r = box.requestFullscreen || box.webkitRequestFullscreen;
+      if (r) r.call(box); else v.webkitEnterFullscreen();
+    };
+    document.getElementById('nfs').onclick = function () { play(); v.webkitEnterFullscreen(); };
+    document.getElementById('pip').onclick = function () {
+      play();
+      if (v.webkitSetPresentationMode) v.webkitSetPresentationMode('picture-in-picture');
+      else if (v.requestPictureInPicture) v.requestPictureInPicture();
+    };
+  })();
+  </script>
+</body>
+</html>

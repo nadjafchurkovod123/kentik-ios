@@ -25,6 +25,12 @@ enum TestHooks {
 
     static var fakeAuth: Bool { arguments.contains("-KentikFakeAuth") }
 
+    /// Опыты для диагностики (DiagProbe): без скриплетов защиты Guard / без списков
+    /// блокировщика / веб-вью на autoresizing вместо Auto Layout.
+    static var noGuard: Bool { arguments.contains("-KentikNoGuard") }
+    static var noBlocker: Bool { arguments.contains("-KentikNoBlocker") }
+    static var webViewAutoresizing: Bool { arguments.contains("-KentikWebViewAutoresizing") }
+
     static var startURL: URL? {
         guard let index = arguments.firstIndex(of: "-KentikStartURL"),
               index + 1 < arguments.count else { return nil }
@@ -36,6 +42,9 @@ enum TestHooks {
     static var persistSession: Bool { false }
     static var incognitoFaceID: Bool { false }
     static var fakeAuth: Bool { false }
+    static var noGuard: Bool { false }
+    static var noBlocker: Bool { false }
+    static var webViewAutoresizing: Bool { false }
     static var startURL: URL? { nil }
 #endif
 

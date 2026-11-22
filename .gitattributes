@@ -3,3 +3,5 @@
 *.jpg binary
 *.ico binary
 *.bin binary
+*.mp4 binary
+*.ts binary

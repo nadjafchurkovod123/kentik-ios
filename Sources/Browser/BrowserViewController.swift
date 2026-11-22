@@ -55,6 +55,7 @@ final class BrowserViewController: UIViewController {
         view.backgroundColor = Theme.background
         tabManager.delegate = self
         BrowserUI.host = self
+        DiagProbe.tabManager = tabManager
         buildLayout()
         wireActions()
         applyAddressBarPosition()
@@ -641,14 +642,21 @@ final class BrowserViewController: UIViewController {
             tab.reloadAfterCrashIfNeeded()
             let webView: WKWebView = tab.webView
             prepare(webView)
-            webView.translatesAutoresizingMaskIntoConstraints = false
-            webContainer.insertSubview(webView, belowSubview: homeView)
-            NSLayoutConstraint.activate([
-                webView.topAnchor.constraint(equalTo: webContainer.topAnchor),
-                webView.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor),
-                webView.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor),
-                webView.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
-            ])
+            if TestHooks.webViewAutoresizing {
+                webView.translatesAutoresizingMaskIntoConstraints = true
+                webView.frame = webContainer.bounds
+                webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                webContainer.insertSubview(webView, belowSubview: homeView)
+            } else {
+                webView.translatesAutoresizingMaskIntoConstraints = false
+                webContainer.insertSubview(webView, belowSubview: homeView)
+                NSLayoutConstraint.activate([
+                    webView.topAnchor.constraint(equalTo: webContainer.topAnchor),
+                    webView.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor),
+                    webView.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor),
+                    webView.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
+                ])
+            }
             applyZoomIfNeeded(tab)
         }
         updateChrome()

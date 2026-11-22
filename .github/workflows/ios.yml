@@ -95,10 +95,12 @@ jobs:
           xcrun simctl boot "$SIM_UDID" || true
           xcrun simctl bootstatus "$SIM_UDID" -b
 
+      # Свой сервер вместо `python3 -m http.server`: запросы Range (без них WebKit на iOS не
+      # играет MP4) и IPv6 (localhost и 127.0.0.1 — разные сайты для плеера во фрейме).
       - name: Сервер фикстур (127.0.0.1:8765)
         run: |
-          mkdir -p build
-          nohup python3 -m http.server "$FIXTURES_PORT" --bind 127.0.0.1 --directory tests/fixtures \
+          mkdir -p build /tmp/kentik-diag
+          nohup python3 scripts/ci/fixture_server.py "$FIXTURES_PORT" tests/fixtures \
             > build/fixtures-server.log 2>&1 &
           for i in $(seq 1 20); do
             curl -sf "http://127.0.0.1:$FIXTURES_PORT/hello.html" >/dev/null && break
@@ -120,7 +122,7 @@ jobs:
           ONLY_TESTING: ${{ inputs.only_testing }}
         run: |
           set -o pipefail
-          FILTER=(-skip-testing:KentikUITests/RealSitesUITests)
+          FILTER=(-skip-testing:KentikUITests/RealSitesUITests -skip-testing:KentikUITests/SeriesDiagUITests)
           if [ -n "$ONLY_TESTING" ]; then
             FILTER=(-only-testing:KentikTests)
             for T in $ONLY_TESTING; do FILTER+=("-only-testing:$T"); done
@@ -174,6 +176,15 @@ jobs:
           name: screenshots
           path: build/screenshots
           if-no-files-found: warn
+
+      # Диагностика DiagProbe (состояние приложения и фреймов на живых сайтах и фикстурах).
+      - name: Артефакт diag
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: diag
+          path: /tmp/kentik-diag
+          if-no-files-found: ignore
 
       - name: Артефакт xcresult (при падении)
         if: failure()

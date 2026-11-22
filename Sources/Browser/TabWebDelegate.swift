@@ -88,6 +88,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
             tab.blockedPopups += 1
             tab.notifyChanged()
             NSLog("[Kentik] всплывающее окно заблокировано: %@", reason)
+            DiagProbe.event("popup-blocked", ["why": reason, "url": navigationAction.request.url?.absoluteString ?? ""])
             return nil
         case .allowNewTab(let background):
             let newTab = manager.addTab(
@@ -104,6 +105,15 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         guard let tab else { return }
         tab.manager?.close(tab)
     }
+
+#if DEBUG
+    /// Срабатывание правила блокировщика (SPI WebKit, только DEBUG — для DiagProbe).
+    @objc(_webView:contentRuleListWithIdentifier:performedAction:forURL:)
+    func diagContentRuleList(_ webView: WKWebView, identifier: String, action: NSObject, url: URL) {
+        let blocked = (action.value(forKey: "blockedLoad") as? Bool) ?? false
+        DiagProbe.ruleAction(list: identifier, url: url, blocked: blocked, page: webView.url)
+    }
+#endif
 
     // MARK: - Вспомогательное
 
