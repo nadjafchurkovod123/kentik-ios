@@ -8,6 +8,10 @@ import UIKit
 /// скачать файлы своего варианта, проверить sha256, сложить в Application Support/KentikFilters/
 /// <версия>/, скомпилировать всё и только тогда подменить списки. При любой ошибке остаются
 /// текущие (встроенные или ранее скачанные) списки, недокачанное удаляется.
+///
+/// Скриптлеты AdGuard для YouTube (ключ "adguard" манифеста) проверяются чаще — раз в 6 часов:
+/// YouTube меняет рекламу часто, а файл маленький (манифест ~8 КБ, набор ~130 КБ и только
+/// когда он новее). Списки при этом качаются по-прежнему не чаще раза в сутки.
 @MainActor
 final class FilterListUpdater {
 
@@ -16,6 +20,8 @@ final class FilterListUpdater {
     static let releaseBase = URL(string: "https://github.com/nadjafchurkovod123/kentik-ios/releases/download/lists/")!
     static var manifestURL: URL { releaseBase.appendingPathComponent("manifest.json") }
     static let checkInterval: TimeInterval = 24 * 60 * 60
+    /// Как часто смотреть манифест ради скриптлетов AdGuard.
+    static let adguardInterval: TimeInterval = 6 * 60 * 60
 
     enum Outcome: Equatable {
         case upToDate(version: String?)
@@ -40,6 +46,7 @@ final class FilterListUpdater {
 
     private let defaults: UserDefaults
     private let lastCheckKey = "filters.lastCheck"
+    private let lastManifestKey = "filters.lastManifestCheck"
     private var waiting: [@MainActor (Result<Outcome, Error>) -> Void] = []
     private var isRunning = false
     private var foregroundObserver: NSObjectProtocol?
@@ -75,8 +82,12 @@ final class FilterListUpdater {
     }
 
     func checkIfDue() {
-        if let lastCheck, Date().timeIntervalSince(lastCheck) < Self.checkInterval { return }
-        checkNow { result in
+        let now = Date()
+        let listsDue = lastCheck.map { now.timeIntervalSince($0) >= Self.checkInterval } ?? true
+        let lastManifest = defaults.object(forKey: lastManifestKey) as? Date
+        let adguardDue = lastManifest.map { now.timeIntervalSince($0) >= Self.adguardInterval } ?? true
+        guard listsDue || adguardDue else { return }
+        run(lists: listsDue) { result in
             if case .failure(let error) = result {
                 NSLog("[Kentik] обновление списков не удалось: %@", error.localizedDescription)
             }
@@ -85,13 +96,18 @@ final class FilterListUpdater {
 
     /// Проверить и обновить сейчас (без ограничения «раз в сутки»).
     func checkNow(completion: @escaping @MainActor (Result<Outcome, Error>) -> Void) {
+        run(lists: true, completion: completion)
+    }
+
+    /// lists: false — только скриптлеты AdGuard (списки ещё свежие).
+    private func run(lists: Bool, completion: @escaping @MainActor (Result<Outcome, Error>) -> Void) {
         waiting.append(completion)
         guard !isRunning else { return }
         isRunning = true
         Task { @MainActor in
             let result: Result<Outcome, Error>
             do {
-                result = .success(try await self.performUpdate())
+                result = .success(try await self.performUpdate(lists: lists))
             } catch {
                 result = .failure(error)
             }
@@ -104,10 +120,17 @@ final class FilterListUpdater {
 
     // MARK: - Обновление
 
-    private func performUpdate() async throws -> Outcome {
+    private func performUpdate(lists: Bool = true) async throws -> Outcome {
         let (data, response) = try await session.data(from: Self.manifestURL)
         try Self.check(response)
         let manifest = try FilterListManifest.parse(data)
+        defaults.set(Date(), forKey: lastManifestKey)
+        do {
+            try await updateAdGuard(manifest)
+        } catch {
+            NSLog("[Kentik] скриптлеты AdGuard не обновились: %@", error.localizedDescription)
+        }
+        guard lists else { return .upToDate(version: ContentBlocker.shared.activeVersion) }
         defaults.set(Date(), forKey: lastCheckKey)
 
         let current = ContentBlocker.shared.activeVersion
@@ -167,6 +190,19 @@ final class FilterListUpdater {
         AdHosts.shared.reloadInBackground()
         NSLog("[Kentik] списки обновлены до %@", manifest.version)
         return .updated(version: manifest.version)
+    }
+
+    /// Скриптлеты AdGuard: скачать, если в манифесте набор новее текущего.
+    private func updateAdGuard(_ manifest: FilterListManifest) async throws {
+        guard let entry = manifest.adguard else { return }
+        AdGuardScriptlets.shared.loadIfNeeded()
+        guard FilterListManifest.isVersion(entry.version, newerThan: AdGuardScriptlets.shared.package?.version) else { return }
+        let url = Self.releaseBase.appendingPathComponent(entry.file)
+        let (fileData, fileResponse) = try await session.data(from: url)
+        try Self.check(fileResponse)
+        try Self.verify(fileData, sha256: entry.sha256, bytes: entry.bytes, file: entry.file)
+        try AdGuardScriptlets.shared.install(downloaded: fileData)
+        NSLog("[Kentik] скриптлеты AdGuard обновлены до %@", entry.version)
     }
 
     private static func check(_ response: URLResponse) throws {

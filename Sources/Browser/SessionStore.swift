@@ -120,7 +120,7 @@ final class SessionStore {
         guard let data = try? JSONEncoder().encode(session) else { return }
         try? FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: fileURL, options: [.atomic, .completeFileProtection])
+        try? data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 }
 

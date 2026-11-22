@@ -92,6 +92,7 @@ final class RedirectGuard {
             return .allow
         case .cancel(let reason):
             NSLog("[Kentik] переход заблокирован (%@): %@", reason, request.url?.absoluteString ?? "")
+            DiagProbe.event("redirect-blocked", ["why": reason, "url": request.url?.absoluteString ?? ""])
             let kind: BlockedNoticeBar.Kind = adHosts.contains(host: request.url?.host) ? .redirect : .siteRedirect
             BlockedNoticeBar.show(kind, url: request.url, on: tab)
             return .cancel

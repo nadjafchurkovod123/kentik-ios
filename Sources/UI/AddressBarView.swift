@@ -42,6 +42,8 @@ final class AddressBarView: UIView {
     let shieldButton = UIButton(type: .system)
     let cancelButton = UIButton(type: .system)
     private let iconView = UIImageView()
+    /// Кружок с градиентом под значком «глаз» в инкогнито — как значок приватного окна на десктопе.
+    private let incognitoBadge = GradientView()
     /// Значок безопасности (замок / предупреждение) рядом с меткой инкогнито.
     private let securityIcon = UIImageView()
     private var securityWidth: NSLayoutConstraint!
@@ -137,8 +139,13 @@ final class AddressBarView: UIView {
         addSubview(shieldButton)
         addSubview(cancelButton)
         shieldButton.addSubview(shieldBadge)
-        [iconView, securityIcon, titleLabel, textField, reloadButton, progressView].forEach { pill.addSubview($0) }
-        [pill, shieldButton, cancelButton, shieldBadge, iconView, securityIcon, titleLabel, textField, reloadButton, progressView]
+        incognitoBadge.setHorizontal(Theme.incognitoGradient)
+        incognitoBadge.layer.cornerRadius = 13
+        incognitoBadge.clipsToBounds = true
+        incognitoBadge.isHidden = true
+        incognitoBadge.isUserInteractionEnabled = false
+        [incognitoBadge, iconView, securityIcon, titleLabel, textField, reloadButton, progressView].forEach { pill.addSubview($0) }
+        [pill, shieldButton, cancelButton, shieldBadge, incognitoBadge, iconView, securityIcon, titleLabel, textField, reloadButton, progressView]
             .forEach { $0.translatesAutoresizingMaskIntoConstraints = false }
         securityWidth = securityIcon.widthAnchor.constraint(equalToConstant: 0)
         securitySpacing = securityIcon.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 0)
@@ -174,6 +181,11 @@ final class AddressBarView: UIView {
             iconView.centerYAnchor.constraint(equalTo: pill.centerYAnchor),
             iconView.widthAnchor.constraint(equalToConstant: 18),
             iconView.heightAnchor.constraint(equalToConstant: 18),
+
+            incognitoBadge.centerXAnchor.constraint(equalTo: iconView.centerXAnchor),
+            incognitoBadge.centerYAnchor.constraint(equalTo: iconView.centerYAnchor),
+            incognitoBadge.widthAnchor.constraint(equalToConstant: 26),
+            incognitoBadge.heightAnchor.constraint(equalToConstant: 26),
 
             reloadButton.trailingAnchor.constraint(equalTo: pill.trailingAnchor),
             reloadButton.topAnchor.constraint(equalTo: pill.topAnchor),
@@ -232,7 +244,10 @@ final class AddressBarView: UIView {
     func applyPalette(_ palette: ChromePalette, incognito: Bool) {
         self.palette = palette
         pill.backgroundColor = palette.field
-        pill.layer.borderColor = (incognito ? Theme.surfaceIncognito : palette.line).cgColor
+        pill.layer.borderColor = (incognito ? Theme.lineIncognito : palette.line).cgColor
+        pill.layer.borderWidth = incognito ? 1.5 : 1
+        incognitoBadge.isHidden = !incognito
+        pill.accessibilityIdentifier = incognito ? "incognitoAddressBar" : "addressPill"
         let placeholder = incognito ? "Инкогнито: поиск или адрес" : "Поиск или адрес"
         textField.attributedPlaceholder = NSAttributedString(
             string: placeholder,
@@ -254,10 +269,10 @@ final class AddressBarView: UIView {
         let https = url?.scheme?.lowercased() == "https"
         if isEditingAddress || url == nil {
             symbol = incognito ? "eye.slash" : "magnifyingglass"
-            if incognito { tint = Theme.violet }
+            if incognito { tint = .white }
         } else if incognito {
             symbol = "eye.slash"
-            tint = Theme.violet
+            tint = .white
             security = https ? ("lock.fill", Theme.dim) : ("exclamationmark.triangle.fill", Theme.warn)
         } else if https {
             symbol = "lock.fill"
@@ -269,6 +284,8 @@ final class AddressBarView: UIView {
         iconView.tintColor = tint
         iconView.isAccessibilityElement = incognito
         iconView.accessibilityLabel = incognito ? "Инкогнито" : nil
+        iconView.accessibilityIdentifier = incognito ? "incognitoBadge" : nil
+        iconView.preferredSymbolConfiguration = .init(pointSize: incognito ? 12 : 14, weight: .semibold)
         securityIcon.image = security.flatMap { UIImage(systemName: $0.symbol) }
         securityIcon.tintColor = security?.tint
         securityIcon.isHidden = security == nil

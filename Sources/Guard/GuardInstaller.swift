@@ -35,6 +35,7 @@ enum GuardInstaller {
 
     static func install(on configuration: WKWebViewConfiguration, tab: Tab) {
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+        if TestHooks.noGuard { return }
         prepareOnce()
 
         let controller = configuration.userContentController
@@ -79,6 +80,7 @@ enum GuardInstaller {
         guard observer == nil else { return }
         AdHosts.shared.add(GuardTestHooks.extraAdHosts)
         AdHosts.shared.preload()
+        AdGuardScriptlets.shared.loadIfNeeded()
         observer = NotificationCenter.default.addObserver(
             forName: .shieldSettingsChanged, object: nil, queue: .main
         ) { _ in
@@ -109,6 +111,7 @@ final class GuardMessageHandler: NSObject, WKScriptMessageHandler {
             GuardState.shared.recordTap(on: tab, link: link)
         case "popup":
             let url = (body["url"] as? String).flatMap { $0.isEmpty ? nil : URL(string: $0) }
+            DiagProbe.event("popup-script", ["why": body["why"] as? String ?? "?", "url": url?.absoluteString ?? ""])
             tab.blockedPopups += 1
             tab.notifyChanged()
             NSLog("[Kentik] скриплет погасил окно (%@): %@", body["why"] as? String ?? "?", url?.absoluteString ?? "")
@@ -117,6 +120,7 @@ final class GuardMessageHandler: NSObject, WKScriptMessageHandler {
             tab.blockedPopups += 1
             tab.notifyChanged()
         case "overlay" where isolated:
+            DiagProbe.event("overlay", ["frame": message.frameInfo.request.url?.absoluteString ?? "?"])
             tab.hiddenByGuard += 1
             tab.notifyChanged()
         default:

@@ -14,8 +14,8 @@ final class BrowserViewController: UIViewController {
     private let toolbarView = BrowserToolbarView()
     private let topStack = UIStackView()
     private let bottomStack = UIStackView()
-    private let topBackground = UIView()
-    private let bottomBackground = UIView()
+    private let topBackground = GradientView()
+    private let bottomBackground = GradientView()
     private let topLine = UIView()
     private let bottomLine = UIView()
     private let webContainer = UIView()
@@ -55,6 +55,7 @@ final class BrowserViewController: UIViewController {
         view.backgroundColor = Theme.background
         tabManager.delegate = self
         BrowserUI.host = self
+        DiagProbe.tabManager = tabManager
         buildLayout()
         wireActions()
         applyAddressBarPosition()
@@ -147,8 +148,10 @@ final class BrowserViewController: UIViewController {
     }
 
     /// Вернулись из фона: если инкогнито заперто и на экране — спросить Face ID.
-    func unlockIfNeeded() {
+    /// retry — повторная попытка: только если запрос за последние секунды так и не показался.
+    func unlockIfNeeded(retry: Bool = false) {
         guard IncognitoLock.shared.isLocked, isShowingIncognitoContent, !IncognitoLock.shared.isAuthenticating else { return }
+        if retry, let last = IncognitoLock.shared.lastPromptAt, Date().timeIntervalSince(last) < 3 { return }
         IncognitoLock.shared.unlock { _ in }
     }
 
@@ -261,6 +264,8 @@ final class BrowserViewController: UIViewController {
         ])
 
         homeView.onSearchTap = { [weak self] in self?.focusAddressBar() }
+        homeView.onHistory = { [weak self] in self?.presentHistory() }
+        homeView.onDownloads = { [weak self] in self?.presentDownloads() }
         homeView.onOpen = { [weak self] url, background in
             guard let self else { return }
             if background {
@@ -423,10 +428,10 @@ final class BrowserViewController: UIViewController {
     }
 
     private func newTab(incognito: Bool) {
-        if incognito, IncognitoLock.shared.isLocked {
-            // Новая вкладка инкогнито при запертом инкогнито — сначала Face ID, как «+»
-            // в переключателе вкладок; отмена — ничего не открывается.
-            IncognitoLock.shared.unlock { [weak self] ok in
+        if incognito {
+            // Вход в инкогнито — сначала Face ID (если заперто), как «+» в переключателе
+            // вкладок; отмена — ничего не открывается.
+            IncognitoLock.shared.requestEntry { [weak self] ok in
                 guard ok, let self else { return }
                 self.tabManager.addTab(incognito: true)
                 self.focusAddressBar()
@@ -536,6 +541,12 @@ final class BrowserViewController: UIViewController {
             self.updateChrome()
             if newTab { self.focusAddressBar() }
         }
+        switcher.onModeChange = { [weak self] in self?.updateChrome() }
+        switcher.onHistory = { [weak self] in
+            guard let self else { return }
+            self.updateChrome()
+            self.presentHistory()
+        }
         tabSwitcher = switcher
         if let tab = tabManager.selectedTab {
             captureSnapshot(of: tab) { [weak switcher] in switcher?.reloadSnapshots() }
@@ -567,7 +578,7 @@ final class BrowserViewController: UIViewController {
         let historyView = HistoryView(
             store: .shared,
             onOpen: { [weak self] url in
-                host?.dismiss(animated: true) { self?.open(url) }
+                host?.dismiss(animated: true) { self?.openFromHistory(url) }
             },
             onDone: { host?.dismiss(animated: true) }
         )
@@ -577,6 +588,16 @@ final class BrowserViewController: UIViewController {
         controller.modalPresentationStyle = .pageSheet
         host = controller
         present(controller, animated: true)
+    }
+
+    /// Адрес из истории — в обычной вкладке (история принадлежит обычному режиму): в текущей,
+    /// если она обычная, иначе в новой.
+    private func openFromHistory(_ url: URL) {
+        if let tab = tabManager.selectedTab, !tab.isIncognito {
+            open(url)
+        } else {
+            tabManager.addTab(url: url, incognito: false)
+        }
     }
 
     func presentDownloads() {
@@ -616,6 +637,7 @@ final class BrowserViewController: UIViewController {
         if IncognitoLock.shared.isLocked {
             endIncognitoEditing()
         }
+        setIncognitoMediaLocked(IncognitoLock.shared.isLocked)
         if IncognitoLock.shared.isLocked, isShowingIncognitoContent {
             // Запираем: убрать всё, что показывает инкогнито поверх страницы (чтение, щит,
             // вкладки), и ввод адреса — замок закрывает только область страницы.
@@ -637,22 +659,57 @@ final class BrowserViewController: UIViewController {
             setPageHidden(false, for: previous)
         }
         if let tab {
+            // Вкладка инкогнито после долгого отсутствия в инкогнито — сначала замок.
+            if tab.isIncognito { IncognitoLock.shared.noteVisible(incognito: true) }
             SessionStore.shared.loadPendingIfNeeded(tab)
             tab.reloadAfterCrashIfNeeded()
             let webView: WKWebView = tab.webView
             prepare(webView)
-            webView.translatesAutoresizingMaskIntoConstraints = false
-            webContainer.insertSubview(webView, belowSubview: homeView)
-            NSLayoutConstraint.activate([
-                webView.topAnchor.constraint(equalTo: webContainer.topAnchor),
-                webView.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor),
-                webView.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor),
-                webView.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
-            ])
+            // Веб-вью — на autoresizing, а не на Auto Layout. Полноэкранный режим WebKit
+            // (плееры сериалов, Element Fullscreen) вынимает веб-вью из нашего контейнера и
+            // возвращает только с рамкой — ограничения Auto Layout при этом теряются, и с
+            // translatesAutoresizingMaskIntoConstraints = false веб-вью схлопывалась в 0×0:
+            // после выхода из полноэкранного режима страница превращалась в тёмную пустоту
+            // (проверено на фикстуре: рамка [0, 0, 0, 0], с autoresizing — во весь контейнер).
+            if !TestHooks.webViewAutoLayout {
+                pin(webView)
+                webContainer.insertSubview(webView, belowSubview: homeView)
+            } else {
+                webView.translatesAutoresizingMaskIntoConstraints = false
+                webContainer.insertSubview(webView, belowSubview: homeView)
+                NSLayoutConstraint.activate([
+                    webView.topAnchor.constraint(equalTo: webContainer.topAnchor),
+                    webView.leadingAnchor.constraint(equalTo: webContainer.leadingAnchor),
+                    webView.trailingAnchor.constraint(equalTo: webContainer.trailingAnchor),
+                    webView.bottomAnchor.constraint(equalTo: webContainer.bottomAnchor),
+                ])
+            }
             applyZoomIfNeeded(tab)
         }
         updateChrome()
         updateLockOverlay(autoPrompt: true)
+        if isIncognitoLocked, UIApplication.shared.applicationState == .active, presentedViewController == nil {
+            IncognitoLock.shared.unlock { _ in }
+        }
+    }
+
+    /// Веб-вью во весь контейнер страницы, рамкой и autoresizing.
+    private func pin(_ webView: WKWebView) {
+        webView.translatesAutoresizingMaskIntoConstraints = true
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        webView.frame = webContainer.bounds
+    }
+
+    /// Вышли из полноэкранного режима: WebKit вернул веб-вью в контейнер — проверяем, что она
+    /// снова на своём месте и во весь размер (страховка к autoresizing).
+    private func restoreAfterFullscreen(_ tab: Tab) {
+        guard !TestHooks.webViewAutoLayout, tab === tabManager.selectedTab else { return }
+        let webView: WKWebView = tab.webView
+        guard webView.fullscreenState == .notInFullscreen, webView.superview === webContainer else { return }
+        if !webView.translatesAutoresizingMaskIntoConstraints || webView.frame != webContainer.bounds {
+            pin(webView)
+        }
+        if lockView != nil { webContainer.bringSubviewToFront(lockView!) }
     }
 
     /// Разовая настройка веб-вью: поиск по странице и «потяни, чтобы обновить».
@@ -701,6 +758,8 @@ final class BrowserViewController: UIViewController {
     }
 
     private func updateChrome() {
+        // Ушли из инкогнито на обычные вкладки — пошёл отсчёт до замка; вернулись — проверка.
+        IncognitoLock.shared.noteVisible(incognito: isShowingIncognitoContent)
         let tab = tabManager.selectedTab
         let incognito = tab?.isIncognito ?? false
         let palette = ChromePalette.forIncognito(incognito)
@@ -716,8 +775,10 @@ final class BrowserViewController: UIViewController {
                 topColor = theme
             }
         }
-        topBackground.backgroundColor = topColor
-        bottomBackground.backgroundColor = palette.bar
+        // Инкогнито — фиолетовые панели с градиентом (как приватное окно на десктопе).
+        topBackground.setHorizontal(incognito ? Theme.incognitoBarGradient : [topColor])
+        bottomBackground.setHorizontal(incognito ? Theme.incognitoBarGradient : [palette.bar])
+        bottomBackground.accessibilityIdentifier = incognito ? "incognitoChrome" : "chrome"
         topLine.backgroundColor = position == .top ? palette.line : .clear
         bottomLine.backgroundColor = palette.line
         view.backgroundColor = palette.background
@@ -745,7 +806,7 @@ final class BrowserViewController: UIViewController {
 
         toolbarView.backButton.isEnabled = !locked && (tab?.canGoBack ?? false)
         toolbarView.forwardButton.isEnabled = !locked && (tab?.canGoForward ?? false)
-        toolbarView.setTint(Theme.text, incognito: incognito)
+        toolbarView.setTint(incognito ? Theme.incognitoTint : Theme.text, incognito: incognito)
         toolbarView.setTabCount(incognito ? tabManager.incognitoTabs.count : tabManager.normalTabs.count)
 
         let showHome = tab != nil && tab?.displayURL == nil
@@ -757,6 +818,22 @@ final class BrowserViewController: UIViewController {
         }
         if !loading { tab?.webView.scrollView.refreshControl?.endRefreshing() }
         shieldSheet?.refresh()
+    }
+
+    /// Под замком видео из инкогнито не остаётся поверх замка: закрываем «на весь экран» и
+    /// «картинку в картинке», ставим на паузу и не даём странице запустить его снова, пока
+    /// замок не открыт.
+    private func setIncognitoMediaLocked(_ locked: Bool) {
+        for tab in tabManager.incognitoTabs {
+            guard let webView = tab.webView else { continue }
+            if locked {
+                webView.pauseAllMediaPlayback(completionHandler: nil)
+                webView.closeAllMediaPresentations(completionHandler: nil)
+                webView.setAllMediaPlaybackSuspended(true, completionHandler: nil)
+            } else {
+                webView.setAllMediaPlaybackSuspended(false, completionHandler: nil)
+            }
+        }
     }
 
     /// Запертые вкладки инкогнито не держат клавиатуру: ни поле на странице, ни «Найти на странице».
@@ -881,10 +958,14 @@ final class BrowserViewController: UIViewController {
     // MARK: - Служебное
 
     /// История, сессия, масштаб, диалоги — для каждой вкладки при изменении адреса.
+    /// Новая страница пишется в историю, как только открылась (commit) — не дожидаясь конца
+    /// загрузки; смена адреса без загрузки (pushState в одностраничных сайтах) — сразу.
     private func trackChanges(of tab: Tab) {
         guard let url = tab.webView.url else { return }
         if lastHistoryURL[tab.id] != url {
-            guard !tab.isLoading else { return }
+            // Во время загрузки адрес веб-вью — ещё цель перехода (может не открыться):
+            // ждём commit этой страницы.
+            guard !tab.isLoading || tab.committedURL == url else { return }
             lastHistoryURL[tab.id] = url
             dialogCount[tab.id] = 0
             dialogsMuted.remove(tab.id)
@@ -907,6 +988,13 @@ extension BrowserViewController: TabManagerDelegate {
     func tabManager(_ manager: TabManager, didUpdate tab: Tab) {
         trackChanges(of: tab)
         if tab === manager.selectedTab { updateChrome() }
+        if tab.fullscreenJustEnded {
+            tab.fullscreenJustEnded = false
+            // После того как WebKit закончит возвращать веб-вью на место.
+            DispatchQueue.main.async { [weak self, weak tab] in
+                if let self, let tab { self.restoreAfterFullscreen(tab) }
+            }
+        }
     }
 
     func tabManagerDidChangeTabs(_ manager: TabManager) {
@@ -917,7 +1005,7 @@ extension BrowserViewController: TabManagerDelegate {
         dialogsMuted = dialogsMuted.filter { alive.contains($0) }
         SnapshotCache.shared.prune(keeping: manager.tabs)
         if !manager.hasIncognitoTabs {
-            IncognitoLock.shared.reset()
+            // Замок не сбрасываем: следующий вход в инкогнито тоже через Face ID.
             SiteZoom.shared.resetIncognito()
         }
         SessionStore.shared.scheduleSave(manager)
@@ -946,7 +1034,11 @@ extension BrowserViewController: BrowserUIHost {
             self?.tabManager.addTab(url: url, incognito: incognito, select: true, opener: tab)
         }
         let private_ = UIAction(title: "Открыть в инкогнито", image: UIImage(systemName: "eye.slash")) { [weak self] _ in
-            self?.tabManager.addTab(url: url, incognito: true, select: true)
+            // Вход в инкогнито — сначала Face ID (если заперто).
+            IncognitoLock.shared.requestEntry { ok in
+                guard ok, let self else { return }
+                self.tabManager.addTab(url: url, incognito: true, select: true)
+            }
         }
         let copy = UIAction(title: "Копировать ссылку", image: UIImage(systemName: "doc.on.doc")) { [weak self] _ in
             UIPasteboard.general.url = url

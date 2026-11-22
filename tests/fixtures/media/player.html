@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kentik Player</title>
+<!--
+  Плеер «как у балансеров» (Alloha, Collaps, Kodik — PlayerJS): видео в контейнере, прозрачный
+  слой поверх видео ловит касания (пауза/пуск), панель с кнопками. «На весь экран» разворачивает
+  контейнер (Element.requestFullscreen), «Системный» — само видео (webkitEnterFullscreen), «PiP» —
+  картинка в картинке. В углу холст с бегущим счётчиком кадров: по нему видно, что картинка
+  продолжает рисоваться (и на весь экран тоже).
+  Параметры: ?src=hls|mp4 (по умолчанию hls), &autoplay=1, &layerz=N (z-index слоя касаний).
+  Состояние уходит родителю (postMessage) и в #st.
+-->
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #000; color: #fbfbfe; font: 15px -apple-system, system-ui, sans-serif; overflow: hidden; }
+  #box { position: relative; width: 100%; height: 100%; background: #000; }
+  #box:fullscreen, #box:-webkit-full-screen { width: 100%; height: 100%; }
+  video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+  #layer { position: absolute; inset: 0; background: transparent; }
+  #ticker { position: absolute; left: 8px; top: 8px; width: 120px; height: 40px; pointer-events: none; }
+  #bar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 6px; padding: 6px; background: rgba(0,0,0,.55); z-index: 5; }
+  #bar button { flex: 1; font: 600 14px -apple-system, system-ui, sans-serif; color: #fff; background: #4b2a85; border: 0; border-radius: 8px; padding: 8px 4px; }
+  #st { position: absolute; right: 8px; top: 8px; font: 12px ui-monospace, monospace; color: #a78bfa; background: rgba(0,0,0,.5); padding: 2px 4px; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="box">
+  <video id="v" playsinline webkit-playsinline muted preload="auto"></video>
+  <canvas id="ticker" width="240" height="80"></canvas>
+  <div id="layer" aria-label="Слой касаний"></div>
+  <div id="st" role="status">ожидание</div>
+  <div id="bar">
+    <button id="play" type="button">Пуск</button>
+    <button id="fs" type="button">На весь экран</button>
+    <button id="nfs" type="button">Системный</button>
+    <button id="pip" type="button">PiP</button>
+  </div>
+</div>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search);
+  var v = document.getElementById('v'), box = document.getElementById('box');
+  var layer = document.getElementById('layer'), st = document.getElementById('st');
+  var src = q.get('src') === 'mp4' ? 'clip.mp4' : 'hls/index.m3u8';
+  if (q.get('layerz')) layer.style.zIndex = q.get('layerz');
+  v.loop = true;
+  v.src = src;
+  var frames = 0, ctx = document.getElementById('ticker').getContext('2d');
+  function draw() {
+    frames++;
+    ctx.fillStyle = '#1e0b36'; ctx.fillRect(0, 0, 240, 80);
+    ctx.fillStyle = 'hsl(' + (frames * 4 % 360) + ',90%,60%)';
+    ctx.fillRect((frames * 6) % 240, 0, 40, 80);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 34px monospace'; ctx.fillText(String(frames), 8, 52);
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+
+  function fsElement() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+  function state() {
+    var s = v.paused ? 'пауза' : 'идёт';
+    if (v.readyState < 2 && !v.paused) s = 'загрузка';
+    var fs = fsElement() ? 'весь экран' : (v.webkitDisplayingFullscreen ? 'системный' : '');
+    var pip = v.webkitPresentationMode === 'picture-in-picture' || document.pictureInPictureElement === v;
+    return { s: s, t: Math.round(v.currentTime * 10) / 10, fs: fs, pip: pip, w: v.videoWidth, h: v.videoHeight, rs: v.readyState };
+  }
+  function report() {
+    var x = state();
+    st.textContent = x.s + ' ' + x.t + (x.fs ? ' · ' + x.fs : '') + (x.pip ? ' · PiP' : '');
+    try { parent.postMessage({ kentikPlayer: x }, '*'); } catch (e) {}
+  }
+  ['play', 'playing', 'pause', 'timeupdate', 'loadeddata', 'webkitpresentationmodechanged',
+   'webkitbeginfullscreen', 'webkitendfullscreen', 'enterpictureinpicture', 'leavepictureinpicture'].forEach(function (t) {
+    v.addEventListener(t, report);
+  });
+  document.addEventListener('fullscreenchange', report);
+  document.addEventListener('webkitfullscreenchange', report);
+  setInterval(report, 1000);
+
+  function play() { v.muted = true; var p = v.play(); if (p && p.catch) p.catch(function (e) { st.textContent = 'ошибка: ' + e.name; }); }
+  function toggle() { if (v.paused) play(); else v.pause(); }
+  function fullscreen() {
+    if (fsElement()) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
+    var req = box.requestFullscreen || box.webkitRequestFullscreen;
+    if (req) {
+      var p = req.call(box);
+      if (p && p.catch) p.catch(function (e) { st.textContent = 'fs: ' + e.name; });
+    } else if (v.webkitEnterFullscreen) {
+      v.webkitEnterFullscreen();
+    }
+  }
+  layer.addEventListener('click', toggle);
+  document.getElementById('play').addEventListener('click', play);
+  document.getElementById('fs').addEventListener('click', fullscreen);
+  document.getElementById('nfs').addEventListener('click', function () { play(); v.webkitEnterFullscreen && v.webkitEnterFullscreen(); });
+  document.getElementById('pip').addEventListener('click', function () {
+    play();
+    if (v.webkitSetPresentationMode) v.webkitSetPresentationMode(v.webkitPresentationMode === 'picture-in-picture' ? 'inline' : 'picture-in-picture');
+    else if (v.requestPictureInPicture) v.requestPictureInPicture();
+  });
+  if (q.get('autoplay') === '1') play();
+  window.kentikPlayer = { play: play, fullscreen: fullscreen, state: state };
+})();
+</script>
+</body>
+</html>

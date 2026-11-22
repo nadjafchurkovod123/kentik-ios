@@ -9,6 +9,10 @@ name: Списки фильтров
 # окон и перенаправлений обновляет его вместе со списками. Перед публикацией каждый список
 # компилируется настоящим WebKit (macOS): список с ошибкой не должен попасть к приложению.
 #
+# И скриптлеты AdGuard для YouTube (adguard.<версия>.json, ключ "adguard"): правила AdGuard Base
+# меняются часто, поэтому сборка идёт раз в 6 часов, а приложение смотрит манифест тоже раз
+# в 6 часов (списки при этом качает не чаще раза в сутки).
+#
 # GitHub выключает расписание в публичном репозитории после 60 дней без активности —
 # задание keepalive каждый раз включает этот workflow заново через API.
 #
@@ -16,7 +20,7 @@ name: Списки фильтров
 
 on:
   schedule:
-    - cron: "17 3 * * *"
+    - cron: "17 */6 * * *"
   workflow_dispatch:
   push:
     paths:
@@ -71,6 +75,15 @@ jobs:
           python3 scripts/ci/build_ad_hosts.py "build/lists/ad_hosts.$VERSION.json" \
             --version "$VERSION" --manifest build/lists/manifest.json
 
+      - name: Скриптлеты AdGuard в манифест
+        env:
+          VERSION: ${{ steps.filters.outputs.version }}
+        run: |
+          set -euo pipefail
+          node --version
+          python3 scripts/filters/build_adguard.py "build/lists/adguard.$VERSION.json" \
+            --version "$VERSION" --manifest build/lists/manifest.json
+
       - name: Каждый список компилируется WebKit
         run: |
           set -euo pipefail
@@ -98,7 +111,7 @@ jobs:
           # Сначала новые файлы (в имени есть версия), потом manifest.json — клиенты никогда
           # не увидят манифест, который ссылается на ещё не загруженные файлы.
           gh release upload lists build/lists/*.json.deflate --clobber
-          for HOSTS in build/lists/ad_hosts.*.json; do
+          for HOSTS in build/lists/ad_hosts.*.json build/lists/adguard.*.json; do
             [ -e "$HOSTS" ] && gh release upload lists "$HOSTS" --clobber
           done
           gh release upload lists build/lists/manifest.json --clobber
@@ -112,6 +125,8 @@ jobs:
           files = [e["file"] for e in m["lists"]]
           if m.get("hosts"):
               files.append(m["hosts"]["file"])
+          if m.get("adguard"):
+              files.append(m["adguard"]["file"])
           print(" ".join(files))
           PY
           )"

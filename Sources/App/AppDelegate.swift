@@ -10,6 +10,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     ) -> Bool {
         TestHooks.prepareFreshStateIfNeeded()
         if TestHooks.incognitoFaceID { AppSettings.shared.incognitoFaceID = true }
+        if TestHooks.incognitoFaceIDOff { AppSettings.shared.incognitoFaceID = false }
         AppSettings.shared.applySearchEngine()
         return true
     }

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kentik Series</title>
+<!--
+  Страница «сайта с сериалами»: плеер с другого сайта во фрейме (страница — 127.0.0.1,
+  плеер — localhost), как kinogo со своими балансерами. Заголовок вкладки повторяет состояние
+  плеера: «Kentik Series · идёт · весь экран» — по нему UI-тест видит, что происходит во фрейме.
+  Параметры уходят плееру (?src=mp4, &autoplay=1, &layerz=…).
+-->
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 12px 14px 40px; background: #12101a; color: #fbfbfe; font: 16px -apple-system, system-ui, sans-serif; }
+  h1 { color: #a78bfa; font-size: 22px; margin: 4px 0 10px; }
+  .player { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; }
+  .player iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  p { color: #bfbfc9; line-height: 1.45; }
+</style>
+</head>
+<body>
+  <h1>Менталист (1-7 сезон)</h1>
+  <div class="player">
+    <iframe id="player" allowfullscreen allow="autoplay; fullscreen; picture-in-picture; encrypted-media"></iframe>
+  </div>
+  <p>Патрик Джейн помогает Калифорнийскому бюро расследований. Фикстура CI: плеер с другого сайта во фрейме.</p>
+  <p id="status">плеер: —</p>
+  <script>
+    var q = location.search || '';
+    document.getElementById('player').src = 'http://localhost:' + (location.port || '80') + '/media/player.html' + q;
+    window.addEventListener('message', function (e) {
+      var x = e.data && e.data.kentikPlayer;
+      if (!x) return;
+      var parts = ['Kentik Series', x.s];
+      if (x.fs) parts.push(x.fs);
+      if (x.pip) parts.push('PiP');
+      var title = parts.join(' · ');
+      if (document.title !== title) document.title = title;
+      document.getElementById('status').textContent = 'плеер: ' + x.s + ' ' + x.t + ' ' + x.w + '×' + x.h;
+    });
+  </script>
+</body>
+</html>

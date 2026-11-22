@@ -23,7 +23,7 @@ jobs:
   build:
     name: Сборка, тесты, IPA
     runs-on: macos-26
-    timeout-minutes: 75
+    timeout-minutes: 120
     env:
       FIXTURES_PORT: "8765"
     steps:
@@ -68,6 +68,13 @@ jobs:
           python3 scripts/ci/build_ad_hosts.py Sources/Resources/ad_hosts.json
           ls -lh Sources/Resources/ad_hosts.json
 
+      # Скриптлеты AdGuard против рекламы в плеере YouTube (Guard/AdGuardScriptlets.swift):
+      # встроенный набор; свежий приложение берёт из релиза «lists» (ключ "adguard").
+      - name: Сборка скриптлетов AdGuard (adguard.json)
+        run: |
+          python3 scripts/filters/build_adguard.py Sources/Resources/adguard.json
+          ls -lh Sources/Resources/adguard.json || echo "::warning::adguard.json не собран"
+
       # Версия: на теге v1.2.3 — 1.2.3 (AltStore сверяет её с источником), иначе — из project.yml.
       # Номер сборки — номер запуска CI, он только растёт.
       - name: Версия приложения
@@ -95,10 +102,12 @@ jobs:
           xcrun simctl boot "$SIM_UDID" || true
           xcrun simctl bootstatus "$SIM_UDID" -b
 
+      # Свой сервер вместо `python3 -m http.server`: запросы Range (без них WebKit на iOS не
+      # играет MP4) и IPv6 (localhost и 127.0.0.1 — разные сайты для плеера во фрейме).
       - name: Сервер фикстур (127.0.0.1:8765)
         run: |
-          mkdir -p build
-          nohup python3 -m http.server "$FIXTURES_PORT" --bind 127.0.0.1 --directory tests/fixtures \
+          mkdir -p build /tmp/kentik-diag
+          nohup python3 scripts/ci/fixture_server.py "$FIXTURES_PORT" tests/fixtures \
             > build/fixtures-server.log 2>&1 &
           for i in $(seq 1 20); do
             curl -sf "http://127.0.0.1:$FIXTURES_PORT/hello.html" >/dev/null && break
@@ -120,7 +129,7 @@ jobs:
           ONLY_TESTING: ${{ inputs.only_testing }}
         run: |
           set -o pipefail
-          FILTER=(-skip-testing:KentikUITests/RealSitesUITests)
+          FILTER=(-skip-testing:KentikUITests/RealSitesUITests -skip-testing:KentikUITests/SeriesDiagUITests)
           if [ -n "$ONLY_TESTING" ]; then
             FILTER=(-only-testing:KentikTests)
             for T in $ONLY_TESTING; do FILTER+=("-only-testing:$T"); done
@@ -136,12 +145,13 @@ jobs:
             "${FILTER[@]}" \
             | xcbeautify --renderer github-actions
 
-      # Настоящие сайты с рекламой (ВКЛ/ВЫКЛ рядом). Живые сайты меняются и бывают
-      # недоступны — шаг не валит сборку, его задача — снимки для глаз.
+      # Настоящие сайты с рекламой (ВКЛ/ВЫКЛ рядом), сайты с сериалами и YouTube
+      # (SeriesDiagUITests: плеер, весь экран, реклама; состояние — артефакт diag). Живые сайты
+      # меняются и бывают недоступны — шаг не валит сборку, его задача — снимки и данные.
       - name: Настоящие сайты (снимки, может моргать)
         if: ${{ !cancelled() && !inputs.only_testing }}
         continue-on-error: true
-        timeout-minutes: 30
+        timeout-minutes: 55
         run: |
           set -o pipefail
           xcodebuild test-without-building \
@@ -151,6 +161,7 @@ jobs:
             -resultBundlePath build/RealSites.xcresult \
             -parallel-testing-enabled NO \
             -only-testing:KentikUITests/RealSitesUITests \
+            -only-testing:KentikUITests/SeriesDiagUITests \
             | xcbeautify --renderer github-actions
 
       - name: Снимки экрана из .xcresult
@@ -174,6 +185,15 @@ jobs:
           name: screenshots
           path: build/screenshots
           if-no-files-found: warn
+
+      # Диагностика DiagProbe (состояние приложения и фреймов на живых сайтах и фикстурах).
+      - name: Артефакт diag
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: diag
+          path: /tmp/kentik-diag
+          if-no-files-found: ignore
 
       - name: Артефакт xcresult (при падении)
         if: failure()

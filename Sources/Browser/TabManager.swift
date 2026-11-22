@@ -68,10 +68,15 @@ final class TabManager {
         }
         if selectedTab === tab {
             let next: Tab?
+            // Следующая — из того же режима: закрыв обычную вкладку, не попадаем в инкогнито
+            // (и наоборот), пока в режиме есть вкладки.
+            let sameMode = tabs.enumerated().filter { $0.element.isIncognito == tab.isIncognito }
             if let opener = tab.opener, tabs.contains(where: { $0 === opener }) {
                 next = opener
             } else if tabs.isEmpty {
                 next = nil
+            } else if !sameMode.isEmpty {
+                next = (sameMode.first { $0.offset >= index } ?? sameMode.last)?.element
             } else {
                 next = tabs[min(index, tabs.count - 1)]
             }

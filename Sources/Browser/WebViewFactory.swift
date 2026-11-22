@@ -41,6 +41,7 @@ enum WebViewFactory {
             configuration.userContentController = userContent
             ContentBlocker.shared.install(on: userContent, host: nil, incognito: tab.isIncognito)
             GuardInstaller.install(on: configuration, tab: tab)
+            DiagProbe.install(on: configuration)
         } else {
             configuration = WKWebViewConfiguration()
             configuration.websiteDataStore = tab.isIncognito
@@ -48,6 +49,9 @@ enum WebViewFactory {
                 : WKWebsiteDataStore.default()
             configuration.allowsInlineMediaPlayback = true
             configuration.allowsPictureInPictureMediaPlayback = true
+            // Как в Safari: без звука видео может стартовать само (превью, следующая серия
+            // в плеере), со звуком — только после касания.
+            configuration.mediaTypesRequiringUserActionForPlayback = .audio
             // Полноэкранный режим для плееров (Fullscreen API) — нужен сайтам с сериалами.
             configuration.preferences.isElementFullscreenEnabled = true
             configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
@@ -59,6 +63,7 @@ enum WebViewFactory {
             // Хуки модулей Blocking и Guard.
             ContentBlocker.shared.install(on: userContent, host: nil, incognito: tab.isIncognito)
             GuardInstaller.install(on: configuration, tab: tab)
+            DiagProbe.install(on: configuration)
         }
 
         let webView = WKWebView(frame: .zero, configuration: configuration)

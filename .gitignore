@@ -14,3 +14,5 @@ __pycache__/
 Sources/Resources/Filters/
 # Набор рекламных хостов собирает CI (scripts/ci/build_ad_hosts.py)
 Sources/Resources/ad_hosts.json
+# Скриптлеты AdGuard собирает CI (scripts/filters/build_adguard.py)
+Sources/Resources/adguard.json

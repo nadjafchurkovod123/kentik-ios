@@ -8,6 +8,10 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
     private(set) var showingIncognito: Bool
     /// Переключатель закрыт; true — открыта новая вкладка (надо поставить фокус в адрес).
     var onFinish: ((Bool) -> Void)?
+    /// Сменился раздел (обычные / инкогнито) — браузер учитывает это для замка инкогнито.
+    var onModeChange: (() -> Void)?
+    /// Открыть историю.
+    var onHistory: (() -> Void)?
 
     private let segment = UISegmentedControl(items: ["Вкладки", "Инкогнито"])
     private let layout = UICollectionViewFlowLayout()
@@ -27,6 +31,10 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
     private var isIncognitoLocked: Bool {
         showingIncognito && IncognitoLock.shared.isLocked && !tabManager.incognitoTabs.isEmpty
     }
+
+    private let historyButton = UIButton(type: .system)
+    /// Фиолетовое «свечение» раздела «Инкогнито».
+    private let incognitoGlow = GradientView()
 
     /// Карточки в коллекции. Пока инкогнито заперто, их нет вовсе: ни заголовков, ни снимков
     /// не попадает ни на экран (даже на миг во время перехода между разделами), ни в дерево
@@ -104,7 +112,27 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
         doneButton.accessibilityIdentifier = "doneTabs"
         doneButton.addTarget(self, action: #selector(doneTapped), for: .touchUpInside)
 
-        [segment, collectionView, emptyStack, bottomBar].forEach {
+        historyButton.setImage(UIImage(systemName: "clock.arrow.circlepath"), for: .normal)
+        historyButton.setPreferredSymbolConfiguration(.init(pointSize: 19, weight: .semibold), forImageIn: .normal)
+        historyButton.tintColor = Theme.violet
+        historyButton.accessibilityLabel = "История"
+        historyButton.accessibilityIdentifier = "historyInSwitcher"
+        historyButton.addTarget(self, action: #selector(historyTapped), for: .touchUpInside)
+
+        incognitoGlow.setRadial(Theme.incognitoGlow)
+        incognitoGlow.alpha = 0
+        incognitoGlow.isUserInteractionEnabled = false
+        incognitoGlow.accessibilityIdentifier = "incognitoGlow"
+        incognitoGlow.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(incognitoGlow)
+        NSLayoutConstraint.activate([
+            incognitoGlow.topAnchor.constraint(equalTo: view.topAnchor),
+            incognitoGlow.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            incognitoGlow.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            incognitoGlow.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+
+        [segment, collectionView, emptyStack, bottomBar, historyButton].forEach {
             $0.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview($0)
         }
@@ -119,6 +147,11 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
             segment.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             segment.widthAnchor.constraint(equalToConstant: 280),
             segment.heightAnchor.constraint(equalToConstant: 36),
+
+            historyButton.centerYAnchor.constraint(equalTo: segment.centerYAnchor),
+            historyButton.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 8),
+            historyButton.widthAnchor.constraint(equalToConstant: 44),
+            historyButton.heightAnchor.constraint(equalToConstant: 44),
 
             collectionView.topAnchor.constraint(equalTo: segment.bottomAnchor, constant: 8),
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -168,11 +201,18 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
 
     private func applyMode(animated: Bool) {
         let palette = ChromePalette.forIncognito(showingIncognito)
+        let incognito = showingIncognito
         let changes = {
             self.view.backgroundColor = palette.background
-            self.bottomBar.backgroundColor = palette.background
+            self.bottomBar.backgroundColor = incognito ? .clear : palette.background
             self.segment.backgroundColor = palette.bar
+            self.incognitoGlow.alpha = incognito ? 1 : 0
+            self.segment.selectedSegmentTintColor = incognito ? Theme.incognitoGradient[0] : Theme.violet
+            self.historyButton.alpha = incognito ? 0 : 1
         }
+        historyButton.isEnabled = !incognito
+        segment.setTitleTextAttributes([.foregroundColor: incognito ? UIColor.white : Theme.background,
+                                        .font: UIFont.systemFont(ofSize: 14, weight: .bold)], for: .selected)
         // Замок — раньше перезагрузки: запертый раздел и так без карточек, но экран замка
         // должен стоять сразу, а не проявляться после перехода.
         updateLock()
@@ -253,7 +293,19 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
 
     @objc private func segmentChanged() {
         showingIncognito = segment.selectedSegmentIndex == 1
+        // Сначала браузер решает про замок (долго были на обычных вкладках — запереть),
+        // потом раздел рисуется: запертые карточки не мелькают.
+        onModeChange?()
         applyMode(animated: true)
+        // Вход в запертый раздел «Инкогнито» — сразу Face ID.
+        if isIncognitoLocked, !IncognitoLock.shared.isAuthenticating {
+            unlock()
+        }
+    }
+
+    @objc private func historyTapped() {
+        let callback = onHistory
+        dismiss(animated: true) { callback?() }
     }
 
     /// Обновить снимки (после того как BrowserViewController снял текущую вкладку).
@@ -265,23 +317,31 @@ final class TabSwitcherViewController: UIViewController, UICollectionViewDataSou
     // MARK: - Действия
 
     @objc private func addTapped() {
-        if isIncognitoLocked {
-            // Новая вкладка инкогнито открывает браузер в запертом инкогнито — сначала Face ID.
-            IncognitoLock.shared.unlock { [weak self] ok in
+        if showingIncognito {
+            // Новая вкладка инкогнито — вход в инкогнито: если заперто, сначала Face ID.
+            IncognitoLock.shared.requestEntry { [weak self] ok in
                 guard ok, let self else { return }
                 self.tabManager.addTab(incognito: true)
                 self.finish(newTab: true)
             }
             return
         }
-        tabManager.addTab(incognito: showingIncognito)
+        tabManager.addTab(incognito: false)
         finish(newTab: true)
     }
 
     @objc private func doneTapped() {
         let list = tabs
         if list.isEmpty {
-            tabManager.addTab(incognito: showingIncognito)
+            if showingIncognito {
+                IncognitoLock.shared.requestEntry { [weak self] ok in
+                    guard ok, let self else { return }
+                    self.tabManager.addTab(incognito: true)
+                    self.finish(newTab: true)
+                }
+                return
+            }
+            tabManager.addTab(incognito: false)
             finish(newTab: true)
             return
         }
@@ -372,6 +432,7 @@ final class TabCell: UICollectionViewCell, UIGestureRecognizerDelegate {
 
     private let card = UIView()
     private let header = UIView()
+    private let headerGradient = GradientView()
     private let iconView = UIImageView()
     private let titleLabel = UILabel()
     private let closeButton = UIButton(type: .system)
@@ -407,6 +468,11 @@ final class TabCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         placeholder.font = .systemFont(ofSize: 44, weight: .bold)
         placeholder.textAlignment = .center
 
+        headerGradient.setHorizontal(Theme.incognitoGradient)
+        headerGradient.isHidden = true
+        headerGradient.isUserInteractionEnabled = false
+        header.addSubview(headerGradient)
+        headerGradient.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(card)
         [header, imageView, placeholder].forEach { card.addSubview($0) }
         [iconView, titleLabel, closeButton].forEach { header.addSubview($0) }
@@ -423,6 +489,10 @@ final class TabCell: UICollectionViewCell, UIGestureRecognizerDelegate {
             header.leadingAnchor.constraint(equalTo: card.leadingAnchor),
             header.trailingAnchor.constraint(equalTo: card.trailingAnchor),
             header.heightAnchor.constraint(equalToConstant: 36),
+            headerGradient.topAnchor.constraint(equalTo: header.topAnchor),
+            headerGradient.bottomAnchor.constraint(equalTo: header.bottomAnchor),
+            headerGradient.leadingAnchor.constraint(equalTo: header.leadingAnchor),
+            headerGradient.trailingAnchor.constraint(equalTo: header.trailingAnchor),
 
             iconView.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 10),
             iconView.centerYAnchor.constraint(equalTo: header.centerYAnchor),
@@ -464,13 +534,18 @@ final class TabCell: UICollectionViewCell, UIGestureRecognizerDelegate {
 
     func configure(with tab: Tab, selected: Bool, snapshot: UIImage?) {
         let palette = ChromePalette.forIncognito(tab.isIncognito)
+        let incognito = tab.isIncognito
         card.backgroundColor = palette.bar
         header.backgroundColor = palette.bar
-        imageView.backgroundColor = tab.isIncognito ? Theme.incognitoBackground : .black
-        card.layer.borderWidth = selected ? 2.5 : 1
-        card.layer.borderColor = (selected ? Theme.violet : palette.line).cgColor
-        iconView.image = UIImage(systemName: tab.isIncognito ? "eye.slash.fill" : (tab.displayURL == nil ? "house.fill" : "globe"))
-        iconView.tintColor = tab.isIncognito ? Theme.violet : Theme.dim
+        // Карточка инкогнито — с фиолетовой шапкой-градиентом, как значок приватного окна.
+        headerGradient.isHidden = !incognito
+        imageView.backgroundColor = incognito ? Theme.incognitoBackground : .black
+        card.layer.borderWidth = selected ? 2.5 : (incognito ? 1.5 : 1)
+        card.layer.borderColor = (selected ? (incognito ? Theme.incognitoGradient[1] : Theme.violet) : palette.line).cgColor
+        card.accessibilityValue = incognito ? "инкогнито" : nil
+        iconView.image = UIImage(systemName: incognito ? "eye.slash.fill" : (tab.displayURL == nil ? "house.fill" : "globe"))
+        iconView.tintColor = incognito ? .white : Theme.dim
+        closeButton.tintColor = incognito ? Theme.incognitoTint : Theme.dim
         titleLabel.text = tab.displayTitle
         card.accessibilityLabel = tab.displayTitle
         imageView.image = snapshot

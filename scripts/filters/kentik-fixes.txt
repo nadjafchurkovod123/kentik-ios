@@ -1,0 +1,8 @@
+! Title: Kentik — исправления
+! Добавляются в КАЖДЫЙ список (исключения WebKit действуют только внутри своего списка).
+!
+! YouTube проверяет, что static.doubleclick.net/instream/ad_status.js загрузился, и иначе
+! считает, что стоит блокировщик. Правила AdGuard для YouTube (скриптлет set-constant
+! google_ad_status=1, см. build_adguard.py) рассчитаны на то, что этот файл не блокируется —
+! то же исключение есть в AdGuard Base.
+@@||static.doubleclick.net/instream/ad_status.js$domain=youtube.com

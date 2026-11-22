@@ -61,6 +61,16 @@ struct FilterListManifest: Codable, Equatable {
     let generated: String?
     let lists: [Entry]
     let hosts: HostsEntry?
+    /// Скриптлеты AdGuard (YouTube): scripts/filters/build_adguard.py, AdGuardScriptlets.
+    let adguard: AdGuardEntry?
+
+    struct AdGuardEntry: Codable, Equatable {
+        let file: String
+        let sha256: String
+        let bytes: Int?
+        let rules: Int?
+        let version: String
+    }
 
     /// Разбор и проверка: схема, версия из цифр, sha256 из 64 hex, безопасные имена файлов.
     static func parse(_ data: Data) throws -> FilterListManifest {
@@ -79,6 +89,10 @@ struct FilterListManifest: Codable, Equatable {
         }
         if let hosts = manifest.hosts, !isSHA256(hosts.sha256) || !isSafeFileName(hosts.file) {
             throw ParseError.badEntry("hosts")
+        }
+        if let adguard = manifest.adguard,
+           !isSHA256(adguard.sha256) || !isSafeFileName(adguard.file) || !adguard.version.allSatisfy(\.isASCIIDigit) {
+            throw ParseError.badEntry("adguard")
         }
         return manifest
     }

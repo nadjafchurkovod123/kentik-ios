@@ -9,6 +9,9 @@ final class HomeView: UIView, UIContextMenuInteractionDelegate {
     var onSearchTap: (() -> Void)?
     /// Открыть адрес (background — в фоновой вкладке).
     var onOpen: ((URL, Bool) -> Void)?
+    /// Кнопки под поиском: история и загрузки.
+    var onHistory: (() -> Void)?
+    var onDownloads: (() -> Void)?
 
     private let scrollView = UIScrollView()
     private let stack = UIStackView()
@@ -19,6 +22,10 @@ final class HomeView: UIView, UIContextMenuInteractionDelegate {
     private let tilesTitle = UILabel()
     private let tilesGrid = UIStackView()
     private let incognitoCard = UIView()
+    /// Фиолетовое «свечение» за домашним экраном инкогнито (как новая вкладка приватного окна
+    /// на десктопе).
+    private let incognitoGlow = GradientView()
+    private let quickRow = UIStackView()
     private var tiles: [HomeTile] = []
     private var incognito = false
 
@@ -32,7 +39,18 @@ final class HomeView: UIView, UIContextMenuInteractionDelegate {
         scrollView.keyboardDismissMode = .onDrag
         scrollView.showsVerticalScrollIndicator = false
         scrollView.translatesAutoresizingMaskIntoConstraints = false
+        incognitoGlow.setRadial(Theme.incognitoGlow, center: CGPoint(x: 0.5, y: 0.25))
+        incognitoGlow.isHidden = true
+        incognitoGlow.isUserInteractionEnabled = false
+        incognitoGlow.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(incognitoGlow)
         addSubview(scrollView)
+        NSLayoutConstraint.activate([
+            incognitoGlow.topAnchor.constraint(equalTo: topAnchor),
+            incognitoGlow.bottomAnchor.constraint(equalTo: bottomAnchor),
+            incognitoGlow.leadingAnchor.constraint(equalTo: leadingAnchor),
+            incognitoGlow.trailingAnchor.constraint(equalTo: trailingAnchor),
+        ])
 
         stack.axis = .vertical
         stack.alignment = .fill
@@ -47,6 +65,7 @@ final class HomeView: UIView, UIContextMenuInteractionDelegate {
 
         buildSearch()
         buildIncognitoCard()
+        buildQuickRow()
 
         tilesTitle.text = "Сайты"
         tilesTitle.font = Theme.font(13, .semibold, style: .footnote, maximum: 17)
@@ -61,11 +80,13 @@ final class HomeView: UIView, UIContextMenuInteractionDelegate {
 
         stack.addArrangedSubview(imageHolder)
         stack.addArrangedSubview(wrap(searchControl, inset: 16))
+        stack.addArrangedSubview(wrap(quickRow, inset: 16))
         stack.addArrangedSubview(wrap(incognitoCard, inset: 16))
         stack.addArrangedSubview(wrap(tilesTitle, inset: 22))
         stack.addArrangedSubview(wrap(tilesGrid, inset: 12))
-        stack.setCustomSpacing(26, after: stack.arrangedSubviews[1])
-        stack.setCustomSpacing(10, after: stack.arrangedSubviews[3])
+        stack.setCustomSpacing(12, after: stack.arrangedSubviews[1])
+        stack.setCustomSpacing(24, after: stack.arrangedSubviews[2])
+        stack.setCustomSpacing(10, after: stack.arrangedSubviews[4])
 
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: topAnchor),
@@ -142,28 +163,78 @@ final class HomeView: UIView, UIContextMenuInteractionDelegate {
         ])
     }
 
+    /// «История» и «Загрузки» прямо под поиском (раньше история была только в меню «•••»).
+    private func buildQuickRow() {
+        quickRow.axis = .horizontal
+        quickRow.distribution = .fillEqually
+        quickRow.spacing = 10
+        quickRow.addArrangedSubview(quickButton("История", symbol: "clock.arrow.circlepath", id: "homeHistory",
+                                                action: #selector(historyTapped)))
+        quickRow.addArrangedSubview(quickButton("Загрузки", symbol: "arrow.down.circle", id: "homeDownloads",
+                                                action: #selector(downloadsTapped)))
+    }
+
+    private func quickButton(_ title: String, symbol: String, id: String, action: Selector) -> UIButton {
+        var config = UIButton.Configuration.filled()
+        config.title = title
+        config.image = UIImage(systemName: symbol)
+        config.imagePadding = 7
+        config.preferredSymbolConfigurationForImage = .init(pointSize: 14, weight: .semibold)
+        config.baseBackgroundColor = Theme.bar.withAlphaComponent(0.94)
+        config.baseForegroundColor = Theme.text
+        config.cornerStyle = .large
+        config.contentInsets = NSDirectionalEdgeInsets(top: 11, leading: 10, bottom: 11, trailing: 10)
+        config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attrs in
+            var a = attrs
+            a.font = Theme.font(15, .semibold, style: .subheadline, maximum: 19)
+            return a
+        }
+        let button = UIButton(configuration: config)
+        button.tintColor = Theme.violet
+        button.accessibilityIdentifier = id
+        button.addTarget(self, action: action, for: .touchUpInside)
+        return button
+    }
+
+    @objc private func historyTapped() { onHistory?() }
+    @objc private func downloadsTapped() { onDownloads?() }
+
     private func buildIncognitoCard() {
-        incognitoCard.backgroundColor = Theme.barIncognito.withAlphaComponent(0.92)
+        incognitoCard.backgroundColor = UIColor(hex: 0x1A0930).withAlphaComponent(0.78)
         incognitoCard.layer.cornerRadius = 18
         incognitoCard.layer.cornerCurve = .continuous
         incognitoCard.layer.borderWidth = 1
-        incognitoCard.layer.borderColor = Theme.surfaceIncognito.cgColor
+        incognitoCard.layer.borderColor = UIColor(hex: 0xD68CFF).withAlphaComponent(0.35).cgColor
         incognitoCard.accessibilityIdentifier = "incognitoHome"
 
+        // Значок — круг с градиентом, как на новой вкладке приватного окна десктопа.
         let icon = UIImageView(image: UIImage(systemName: "eye.slash.fill"))
-        icon.tintColor = Theme.violet
-        icon.preferredSymbolConfiguration = .init(pointSize: 22, weight: .semibold)
+        icon.tintColor = .white
+        icon.preferredSymbolConfiguration = .init(pointSize: 20, weight: .semibold)
         icon.contentMode = .center
-        icon.setContentHuggingPriority(.required, for: .horizontal)
-        icon.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let badge = GradientView()
+        badge.setHorizontal(Theme.incognitoGradient)
+        badge.layer.cornerRadius = 22
+        badge.clipsToBounds = true
+        badge.accessibilityIdentifier = "incognitoHomeBadge"
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        badge.addSubview(icon)
+        NSLayoutConstraint.activate([
+            badge.widthAnchor.constraint(equalToConstant: 44),
+            badge.heightAnchor.constraint(equalToConstant: 44),
+            icon.centerXAnchor.constraint(equalTo: badge.centerXAnchor),
+            icon.centerYAnchor.constraint(equalTo: badge.centerYAnchor),
+        ])
+        badge.setContentHuggingPriority(.required, for: .horizontal)
+        badge.setContentCompressionResistancePriority(.required, for: .horizontal)
         let title = UILabel()
         title.setContentHuggingPriority(.defaultLow, for: .horizontal)
         title.text = "Режим инкогнито"
         title.font = Theme.font(19, .bold, style: .title3, maximum: 26)
         title.adjustsFontForContentSizeCategory = true
         title.textColor = Theme.text
-        let header = UIStackView(arrangedSubviews: [icon, title])
-        header.spacing = 10
+        let header = UIStackView(arrangedSubviews: [badge, title])
+        header.spacing = 12
         header.alignment = .center
 
         let lines = [
@@ -176,7 +247,7 @@ final class HomeView: UIView, UIContextMenuInteractionDelegate {
         body.spacing = 10
         for (symbol, text) in lines {
             let i = UIImageView(image: UIImage(systemName: symbol))
-            i.tintColor = Theme.violet
+            i.tintColor = UIColor(hex: 0xD68CFF)
             i.preferredSymbolConfiguration = .init(pointSize: 13, weight: .semibold)
             i.setContentHuggingPriority(.required, for: .horizontal)
             i.widthAnchor.constraint(equalToConstant: 22).isActive = true
@@ -223,12 +294,14 @@ final class HomeView: UIView, UIContextMenuInteractionDelegate {
         self.incognito = incognito
         let palette = ChromePalette.forIncognito(incognito)
         backgroundColor = incognito ? Theme.incognitoBackground : .black
-        imageView.alpha = incognito ? 0.45 : 1
+        incognitoGlow.isHidden = !incognito
+        imageView.alpha = incognito ? 0.3 : 1
+        quickRow.superview?.isHidden = incognito
         searchControl.backgroundColor = palette.bar.withAlphaComponent(0.94)
-        searchControl.layer.borderColor = (incognito ? Theme.surfaceIncognito : palette.line).cgColor
+        searchControl.layer.borderColor = (incognito ? Theme.lineIncognito : palette.line).cgColor
         searchLabel.text = incognito ? "Инкогнито: поиск или адрес" : "Поиск или адрес"
         searchIcon.image = UIImage(systemName: incognito ? "eye.slash" : "magnifyingglass")
-        searchIcon.tintColor = incognito ? Theme.violet : Theme.dim
+        searchIcon.tintColor = incognito ? UIColor(hex: 0xD68CFF) : Theme.dim
 
         incognitoCard.superview?.isHidden = !incognito
         tiles = incognito ? [] : TileStore.shared.tiles()

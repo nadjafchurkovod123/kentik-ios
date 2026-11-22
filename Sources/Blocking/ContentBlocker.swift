@@ -227,7 +227,8 @@ final class ContentBlocker {
 
     /// Какие списки должны стоять для хоста.
     func desiredLists(forHost host: String?, incognito: Bool = false) -> [WKContentRuleList] {
-        settings.isEnabled(forHost: host, incognito: incognito) ? ruleLists : []
+        if TestHooks.noBlocker { return [] }
+        return settings.isEnabled(forHost: host, incognito: incognito) ? ruleLists : []
     }
 
     /// Наши списки, которые сейчас стоят на контроллере (для тестов и статистики).

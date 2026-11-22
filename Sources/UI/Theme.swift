@@ -15,12 +15,22 @@ enum Theme {
     /// Разделители (--line).
     static let line = UIColor(hex: 0x393842)
 
-    // Инкогнито.
-    static let incognitoBackground = UIColor(hex: 0x1A0F2E)
-    static let barIncognito = UIColor(hex: 0x2E1754)
-    static let fieldIncognito = UIColor(hex: 0x1C0B36)
-    static let surfaceIncognito = UIColor(hex: 0x4B2A85)
-    static let lineIncognito = UIColor(hex: 0x4A2D63)
+    // Инкогнито — фиолетовый, как приватное окно десктопного Kentik (--frame #1e0b36,
+    // --bar #2a1150, --tab #4b2a85, значок #7b2ff7 → #c026d3), чуть насыщеннее: на OLED-экране
+    // iPhone тёмно-фиолетовый иначе читается как чёрный.
+    static let incognitoBackground = UIColor(hex: 0x1E0B36)
+    static let barIncognito = UIColor(hex: 0x3B1670)
+    static let fieldIncognito = UIColor(hex: 0x24104A)
+    static let surfaceIncognito = UIColor(hex: 0x5B3A98)
+    static let lineIncognito = UIColor(hex: 0x7C4DDB)
+    /// Градиент значка «Инкогнито» и панелей (слева направо).
+    static let incognitoGradient = [UIColor(hex: 0x7B2FF7), UIColor(hex: 0xC026D3)]
+    /// Градиент панелей инкогнито (спокойнее значка).
+    static let incognitoBarGradient = [UIColor(hex: 0x3B1670), UIColor(hex: 0x5A1A86)]
+    /// Фон домашнего экрана и переключателя инкогнито: центр → края.
+    static let incognitoGlow = [UIColor(hex: 0x3B1470), UIColor(hex: 0x1E0B36), UIColor(hex: 0x12061F)]
+    /// Значки на фиолетовых панелях.
+    static let incognitoTint = UIColor(hex: 0xEBDDFF)
 
     /// Фиолетовый акцент (--vio / --link).
     static let violet = UIColor(hex: 0xA78BFA)
@@ -77,6 +87,33 @@ extension UIColor {
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         guard getRed(&r, green: &g, blue: &b, alpha: &a) else { return false }
         return (0.299 * r + 0.587 * g + 0.114 * b) > 0.6
+    }
+}
+
+/// Вью с градиентом во весь размер (слой — CAGradientLayer, следует за размером сам).
+final class GradientView: UIView {
+
+    override class var layerClass: AnyClass { CAGradientLayer.self }
+
+    var gradient: CAGradientLayer { layer as! CAGradientLayer }
+
+    /// Горизонтальный градиент (или сплошной цвет, если цвет один).
+    func setHorizontal(_ colors: [UIColor]) {
+        let list = colors.count == 1 ? [colors[0], colors[0]] : colors
+        gradient.type = .axial
+        gradient.colors = list.map(\.cgColor)
+        gradient.startPoint = CGPoint(x: 0, y: 0.5)
+        gradient.endPoint = CGPoint(x: 1, y: 0.5)
+        gradient.locations = nil
+    }
+
+    /// Радиальное «свечение» из точки center (доли размера) к краям.
+    func setRadial(_ colors: [UIColor], center: CGPoint = CGPoint(x: 0.5, y: 0.3)) {
+        gradient.type = .radial
+        gradient.colors = colors.map(\.cgColor)
+        gradient.startPoint = center
+        gradient.endPoint = CGPoint(x: center.x + 0.9, y: center.y + 0.75)
+        gradient.locations = [0, 0.55, 1]
     }
 }
 
