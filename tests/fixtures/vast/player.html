@@ -46,7 +46,8 @@
     xhr('d', 'http://distribrey.com' + port + '/vast/zone.xml?id=64746&roll=pre&dcc=1'),
     xhr('s', 'http://r51.adstag0102.xyz' + port + '/vast/zone.xml?id=190&vast=3&channel1=kinogo.online'),
     media('m', 'http://cdn.mbt-8.com' + port + '/media/clip.mp4'),
-    xhr('c', 'http://vast-control.kentik.test' + port + '/vast/zone.xml' + q)
+    // Контроль без рекламных параметров (на ?cp.host=…&cp.domain= в RU-списке есть своё правило).
+    xhr('c', 'http://vast-control.kentik.test' + port + '/vast/zone.xml?id=1')
   ]).then(function () {
     var v = document.getElementById('v'), t0 = Date.now();
     v.src = '/media/clip.mp4';
