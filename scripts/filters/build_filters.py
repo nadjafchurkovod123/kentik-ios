@@ -218,8 +218,59 @@ def run_converter(converter: str, rules: list[str], safari: str, work: str, tag:
     rules_json = json.loads(result["safariRulesJSON"])
     if not isinstance(rules_json, list):
         raise RuntimeError(f"{tag}: конвертер вернул не массив правил")
+    if float(safari) >= 26:
+        rules_json, added = add_frame_scoped(rules_json)
+        result["_frameScoped"] = added
     result["_rules"] = rules_json
     return result
+
+
+# ─────────────────────── Правила $domain внутри фреймов ───────────────────────
+#
+# В ABP/uBO/AdGuard `$domain=` относится к документу, из которого идёт запрос (для запроса из
+# iframe плеера — к самому плееру). Конвертер переводит его в `if-domain`, а WebKit сверяет
+# if-domain только с адресом ГЛАВНОГО документа: правила вида
+# `/vpaid^$xmlhttprequest,domain=kodik.info` или `@@...$domain=плеер` внутри чужого фрейма
+# не срабатывают никогда (сайт-то kinogo.online). С WebKit 26 (iOS 26) есть `if-frame-url` —
+# адрес фрейма, который делает запрос. Для каждого сетевого правила с if-domain рядом (сразу
+# после него, порядок важен для ignore-previous-rules) ставим копию с if-frame-url на те же
+# домены. Для главного фрейма копия совпадает с оригиналом, для фреймов — даёт семантику uBO.
+
+FRAME_ACTIONS = {"block", "ignore-previous-rules", "block-cookies"}
+_SKIP_KEYS = ("unless-domain", "if-top-url", "unless-top-url", "if-frame-url", "unless-frame-url")
+_DOMAIN_RE = re.compile(r"^\*?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$")
+
+
+def frame_url_pattern(domain: str):
+    """Домен из if-domain («*example.com» — с поддоменами) → регулярка WebKit для адреса фрейма
+    (тот же вид, что у SafariConverterLib для `domain.*`; без `|` — WebKit его не умеет)."""
+    domain = domain.lower()
+    if not _DOMAIN_RE.match(domain):
+        return None
+    sub = domain.startswith("*")
+    escaped = domain.lstrip("*").replace(".", r"\.")
+    prefix = r"^[^:]+://+([^:/]+\.)?" if sub else r"^[^:]+://+"
+    return prefix + escaped + "([/:?#].*)?$"
+
+
+def add_frame_scoped(rules: list) -> tuple[list, int]:
+    out, added = [], 0
+    for rule in rules:
+        out.append(rule)
+        trigger = rule.get("trigger", {})
+        domains = trigger.get("if-domain")
+        if not domains or rule.get("action", {}).get("type") not in FRAME_ACTIONS:
+            continue
+        if any(k in trigger for k in _SKIP_KEYS):
+            continue
+        patterns = [frame_url_pattern(d) for d in domains]
+        if not patterns or any(p is None for p in patterns):
+            continue
+        copy_trigger = {k: v for k, v in trigger.items() if k != "if-domain"}
+        copy_trigger["if-frame-url"] = patterns
+        out.append({"trigger": copy_trigger, "action": rule["action"]})
+        added += 1
+    return out, added
 
 
 def split_chunks(chunks: list[tuple[str, list[str]]]) -> tuple[list, list]:
@@ -357,7 +408,8 @@ def main() -> int:
                 discarded = result.get("discardedSafariRules", 0)
                 errors = result.get("errorsCount", 0)
                 advanced = result.get("advancedRulesCount", 0)
-                log(f"  {list_id:14} {vid}: источник {src_count} → правил {len(rules_json)}; "
+                framed = result.get("_frameScoped", 0)
+                log(f"  {list_id:14} {vid}: источник {src_count} → правил {len(rules_json)} (из них для фреймов {framed}); "
                     f"не сконвертировано {errors}; отброшено лимитом {discarded}; продвинутых {advanced}; "
                     f"JSON {len(payload) / 1e6:.1f} МБ → {len(packed) / 1e6:.2f} МБ; {result['_seconds']} с")
                 report.append(f"| {list_id} | {vid} | {src_count} | {len(rules_json)} | {errors} | {discarded} | "

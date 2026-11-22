@@ -38,6 +38,9 @@ jobs:
           xcodebuild -version
           xcodebuild -showsdks | grep -i -E "iphone|ios" || true
 
+      - name: Проверки сборщиков списков и скриптлетов (Python)
+        run: python3 -m unittest discover -s scripts/filters -p "test_*.py" -v
+
       - name: Инструменты (XcodeGen, xcbeautify)
         run: |
           brew install xcodegen
@@ -115,6 +118,16 @@ jobs:
           done
           curl -sf "http://127.0.0.1:$FIXTURES_PORT/hello.html" | head -5
 
+      # Фикстура плееров сериалов (PlayerAdsUITests): настоящие имена рекламных хостов и плееров
+      # указывают на сервер фикстур — так проверяются настоящие правила списков во фреймах.
+      # Снимается перед шагом с настоящими сайтами.
+      - name: Имена для фикстуры плееров (/etc/hosts)
+        run: |
+          echo "127.0.0.1 kinogo.online cinemar.cc cvt-s2.agl008.shop distribrey.com r51.adstag0102.xyz cdn.mbt-8.com kentik-player.test vast-ads.kentik.test vast-control.kentik.test # kentik-vast" | sudo tee -a /etc/hosts
+          sudo dscacheutil -flushcache || true
+          sudo killall -HUP mDNSResponder || true
+          curl -sf "http://cinemar.cc:$FIXTURES_PORT/vast/zone.xml" | head -2
+
       - name: Сборка для тестов
         run: |
           set -o pipefail
@@ -154,6 +167,9 @@ jobs:
         timeout-minutes: 55
         run: |
           set -o pipefail
+          sudo sed -i '' '/# kentik-vast/d' /etc/hosts
+          sudo dscacheutil -flushcache || true
+          sudo killall -HUP mDNSResponder || true
           xcodebuild test-without-building \
             -project Kentik.xcodeproj -scheme Kentik \
             -destination "id=$SIM_UDID" \

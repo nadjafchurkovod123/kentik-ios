@@ -6,3 +6,9 @@
 ! google_ad_status=1, см. build_adguard.py) рассчитаны на то, что этот файл не блокируется —
 ! то же исключение есть в AdGuard Base.
 @@||static.doubleclick.net/instream/ad_status.js$domain=youtube.com
+!
+! Проверка правил `$domain=` внутри чужих фреймов (UI-тест PlayerAdsUITests): запрос из
+! тестового плеера kentik-player.test к vast-ads.kentik.test (домены .test в интернете не
+! существуют) блокируется, хотя сверху открыт другой сайт — так работают правила AdGuard
+! для плееров (`…$domain=kodik.info`) с if-frame-url (iOS 26+).
+||vast-ads.kentik.test^$domain=kentik-player.test

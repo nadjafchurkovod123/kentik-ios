@@ -1,0 +1,8 @@
+! Title: Kentik — скриптлеты для фреймов
+! Свои правила в синтаксисе AdGuard (`домены#%#//scriptlet(...)`), build_adguard.py добавляет их
+! к скриптлетам для фреймов (как AdGuard Russian и RU AdList). Ставятся во все фреймы, каждое
+! сверяет хост своего фрейма.
+!
+! Проверка конвейера в UI-тесте (PlayerAdsUITests): тестовый плеер на kentik-player.test
+! (домен .test в интернете не существует) — из его конфига вырезаются рекламные поля.
+kentik-player.test#%#//scriptlet('json-prune', 'vast adv preroll')

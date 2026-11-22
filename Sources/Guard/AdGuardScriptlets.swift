@@ -17,6 +17,12 @@ import WebKit
 /// Куда: в мир страницы, во все фреймы, до загрузки документа — только в веб-вью, чей главный
 /// фрейм идёт на сайт из набора (решение на каждую навигацию главного фрейма, как у щита в
 /// ContentBlocker), и только если щит включён на этом сайте (с учётом выключателей инкогнито).
+///
+/// Скриптлеты для фреймов (ключ "frameScripts", с 1.0.3): правила AdGuard Russian и RU AdList
+/// (`kodik.info##+js(json-prune, vast)`, `lumex.space##+js(json-prune-fetch-response, …)`)
+/// относятся к хосту ФРЕЙМА — плеер сериала живёт в чужом iframe, а сайт сверху любой. Поэтому
+/// они ставятся во все фреймы любой страницы (если щит на сайте включён), а каждый вызов сам
+/// сверяет location.hostname своего фрейма.
 @MainActor
 final class AdGuardScriptlets {
 
@@ -24,6 +30,8 @@ final class AdGuardScriptlets {
 
     /// Метка в начале каждого скрипта — по ней находим свои скрипты в контроллере.
     static let marker = "/*kentik-adguard*/"
+    /// Метка скриптов для фреймов.
+    static let frameMarker = "/*kentik-adguard-frames*/"
 
     struct Package: Equatable {
         let version: String
@@ -31,10 +39,15 @@ final class AdGuardScriptlets {
         let hosts: [String]
         let sources: [String]
         let rules: Int
+        /// Скрипты для всех фреймов (сами сверяют хост фрейма); пусто — в наборе их нет.
+        var frameSources: [String] = []
+        var frameRules: Int = 0
+        var frameHosts: [String] = []
     }
 
     private(set) var package: Package?
     private var userScripts: [WKUserScript] = []
+    private var frameUserScripts: [WKUserScript] = []
     private var loaded = false
     /// Что стоит на контроллере: версия набора ("" — ничего).
     private let installed = NSMapTable<WKUserContentController, NSString>.weakToStrongObjects()
@@ -82,9 +95,14 @@ final class AdGuardScriptlets {
             WKUserScript(source: Self.marker + "\n" + $0, injectionTime: .atDocumentStart,
                          forMainFrameOnly: false, in: .page)
         }
+        frameUserScripts = (package?.frameSources ?? []).map {
+            WKUserScript(source: Self.frameMarker + "\n" + $0, injectionTime: .atDocumentStart,
+                         forMainFrameOnly: false, in: .page)
+        }
         if let package {
-            NSLog("[Kentik] скриптлеты AdGuard %@: правил %d, скриптов %d (библиотека %@)",
-                  package.version, package.rules, package.sources.count, package.library)
+            NSLog("[Kentik] скриптлеты AdGuard %@: правил %d, скриптов %d, для фреймов %d (хостов %d), библиотека %@",
+                  package.version, package.rules, package.sources.count, package.frameRules,
+                  package.frameHosts.count, package.library)
         }
     }
 
@@ -97,11 +115,16 @@ final class AdGuardScriptlets {
               let hosts = object["hosts"] as? [String], !hosts.isEmpty else { return nil }
         let sources = scripts.compactMap { $0["source"] as? String }.filter { !$0.isEmpty }
         guard !sources.isEmpty else { return nil }
+        let frameSources = ((object["frameScripts"] as? [[String: Any]]) ?? [])
+            .compactMap { $0["source"] as? String }.filter { !$0.isEmpty }
         return Package(version: version,
                        library: object["library"] as? String ?? "?",
                        hosts: hosts.map { $0.lowercased() },
                        sources: sources,
-                       rules: object["rules"] as? Int ?? sources.count)
+                       rules: object["rules"] as? Int ?? sources.count,
+                       frameSources: frameSources,
+                       frameRules: object["frameRules"] as? Int ?? frameSources.count,
+                       frameHosts: ((object["frameHosts"] as? [String]) ?? []).map { $0.lowercased() })
     }
 
     /// Сохранить скачанный набор и сразу взять его, если он новее текущего.
@@ -136,20 +159,33 @@ final class AdGuardScriptlets {
 
     func sync(_ controller: WKUserContentController, host: String?, incognito: Bool) {
         loadIfNeeded()
-        let want = !TestHooks.noAdGuard && applies(to: host) && isShieldEnabled(host, incognito)
-        let key = want ? (package?.version ?? "") : ""
+        let shield = !TestHooks.noAdGuard && isShieldEnabled(host, incognito)
+        let wantSite = shield && applies(to: host)
+        let wantFrames = shield && !frameUserScripts.isEmpty
+        let key = (wantSite || wantFrames)
+            ? "\(package?.version ?? "")|\(wantSite ? "site" : "")|\(wantFrames ? "frames" : "")" : ""
         let current = (installed.object(forKey: controller) as String?) ?? ""
         guard key != current else { return }
-        let others = controller.userScripts.filter { !$0.source.hasPrefix(Self.marker) }
+        let others = controller.userScripts.filter { !Self.isOwn($0) }
         controller.removeAllUserScripts()
         others.forEach(controller.addUserScript)
-        if want { userScripts.forEach(controller.addUserScript) }
+        if wantFrames { frameUserScripts.forEach(controller.addUserScript) }
+        if wantSite { userScripts.forEach(controller.addUserScript) }
         installed.setObject(key as NSString, forKey: controller)
-        DiagProbe.event("adguard", ["host": host ?? "", "installed": want, "version": key])
+        DiagProbe.event("adguard", ["host": host ?? "", "installed": wantSite, "frames": wantFrames, "version": key])
     }
 
-    /// Стоят ли сейчас скрипты на контроллере (для тестов).
+    private static func isOwn(_ script: WKUserScript) -> Bool {
+        script.source.hasPrefix(marker) || script.source.hasPrefix(frameMarker)
+    }
+
+    /// Стоят ли сейчас скрипты сайта (YouTube) на контроллере (для тестов).
     func isInstalled(on controller: WKUserContentController) -> Bool {
         controller.userScripts.contains { $0.source.hasPrefix(Self.marker) }
+    }
+
+    /// Стоят ли скрипты для фреймов (для тестов).
+    func areFrameScriptsInstalled(on controller: WKUserContentController) -> Bool {
+        controller.userScripts.contains { $0.source.hasPrefix(Self.frameMarker) }
     }
 }

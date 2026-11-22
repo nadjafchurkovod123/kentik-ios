@@ -61,6 +61,20 @@ USER_AGENT = "KentikFilterBuilder/1.0 (+https://github.com/nadjafchurkovod123/ke
 # Сайты, для которых берутся правила (и их поддомены).
 SCOPE = ["youtube.com", "youtube-nocookie.com", "youtubekids.com"]
 
+# Скриптлеты для фреймов (плееры сериалов и вообще рунет): правила с доменами из этих списков.
+# Ставятся во ВСЕ фреймы всех страниц (щит включён), каждый вызов сам сверяет хост своего
+# фрейма — так `kodik.info##+js(json-prune, vast)` срабатывает внутри iframe Kodik на любом
+# сайте с сериалами. trusted-скриптлеты — только из списков AdGuard и своих (как в AdGuard/uBO).
+FRAME_SOURCES = [
+    {"id": "adguard-russian", "title": "AdGuard Russian (Safari)", "syntax": "adguard", "trusted": True,
+     "urls": ["https://filters.adtidy.org/extension/safari/filters/1.txt",
+              "https://filters.adtidy.org/ios/filters/1.txt"]},
+    {"id": "ruadlist", "title": "RU AdList (uBO)", "syntax": "ubo", "trusted": False,
+     "urls": ["https://raw.githubusercontent.com/dimisa-RUAdList/RUAdListCDN/main/lists/ruadlist.ubo.min.txt",
+              "https://cdn.jsdelivr.net/gh/dimisa-RUAdList/RUAdListCDN@main/lists/ruadlist.ubo.min.txt"]},
+    {"id": "kentik", "title": "Kentik", "syntax": "adguard", "trusted": True, "file": "kentik-scriptlets.txt"},
+]
+
 # Меньше — что-то сломалось (источник изменился): такой набор не публикуем.
 MIN_RULES = 5
 
@@ -199,8 +213,49 @@ def parse_line(line: str):
     return rule
 
 
-def extract(text: str) -> list[dict]:
-    """Правила `#%#`/`#@%#` из текста списка с учётом !#if; только для SCOPE."""
+def split_ubo_args(s: str) -> list[str]:
+    """Аргументы `##+js(имя, a, b)` uBO: через запятую; запятая с обратной косой — внутри аргумента."""
+    out, cur, i = [], [], 0
+    while i < len(s):
+        c = s[i]
+        if c == "\\" and i + 1 < len(s) and s[i + 1] == ",":
+            cur.append(",")
+            i += 2
+            continue
+        if c == ",":
+            out.append("".join(cur).strip())
+            cur = []
+            i += 1
+            continue
+        cur.append(c)
+        i += 1
+    out.append("".join(cur).strip())
+    # Аргумент в кавычках целиком — кавычки снимаем (так пишут, когда в нём пробелы по краям).
+    return [a[1:-1] if len(a) >= 2 and a[0] == a[-1] and a[0] in "'\"" else a for a in out]
+
+
+def parse_ubo_line(line: str):
+    """Правило uBO `домены##+js(...)` / `домены#@#+js(...)` → dict как у parse_line или None."""
+    m = re.match(r"^([^#]*)#(@?)#\+js\((.*)\)$", line.strip())
+    if not m:
+        return None
+    domains, negated = [], []
+    for d in m.group(1).split(","):
+        d = d.strip().lower()
+        if not d:
+            continue
+        if d.startswith("/") or d.startswith("~/"):
+            return None
+        (negated if d.startswith("~") else domains).append(d.lstrip("~"))
+    body = m.group(3).strip()
+    args = split_ubo_args(body) if body else [""]
+    return {"ex": m.group(2) == "@", "d": domains, "n": negated, "p": None, "k": "s", "a": args}
+
+
+def extract(text: str, syntax: str = "adguard", scope=None) -> list[dict]:
+    """Правила `#%#`/`#@%#` (AdGuard) или `##+js`/`#@#+js` (uBO) из текста списка с учётом !#if.
+    scope — функция «домен подходит» (по умолчанию SCOPE); None-домены не берутся."""
+    scope = scope or in_scope
     rules, stack, active = [], [], True
     for raw in text.splitlines():
         line = raw.strip()
@@ -221,16 +276,23 @@ def extract(text: str) -> list[dict]:
             if stack:
                 active = stack.pop()[0]
             continue
-        if not active or line.startswith("!") or "%#" not in line:
+        if not active or line.startswith("!"):
             continue
-        rule = parse_line(line)
+        if syntax == "ubo":
+            if "#+js(" not in line:
+                continue
+            rule = parse_ubo_line(line)
+        else:
+            if "%#" not in line:
+                continue
+            rule = parse_line(line)
         if not rule:
             continue
-        scoped = [d for d in rule["d"] if in_scope(d)]
-        if not scoped:
+        scoped = [d for d in rule["d"] if scope(d)]
+        if not scoped and not (rule["ex"] and not rule["d"]):
             continue
         rule["d"] = scoped
-        rule["n"] = [d for d in rule["n"] if in_scope(d)]
+        rule["n"] = [d for d in rule["n"] if scope(d)]
         rules.append(rule)
     return rules
 
@@ -298,8 +360,9 @@ def apply_exceptions(rules: list[dict], lib: Library) -> list[dict]:
                 continue
             if e["p"] and e["p"] != rule["p"]:
                 continue
-            # Исключение на тех же (или более общих) доменах отменяет правило совсем.
-            if all(any(d == x or d.endswith("." + x) for x in e["d"]) for d in rule["d"]):
+            # Исключение без доменов (везде) или на тех же (или более общих) доменах отменяет
+            # правило совсем.
+            if not e["d"] or all(any(d == x or d.endswith("." + x) for x in e["d"]) for d in rule["d"]):
                 cancelled = True
                 break
             rule["n"] = sorted(set(rule["n"]) | set(e["d"]))
@@ -364,7 +427,62 @@ def syntax_ok(source: str) -> bool:
         os.unlink(path)
 
 
-def build(rules_text: str, library_text: str, version: str, source_meta: dict) -> dict:
+def frame_scope(domain: str) -> bool:
+    """Для фреймов — любые домены, кроме YouTube (его правила ставятся отдельно, по сайту)."""
+    return bool(domain) and not in_scope(domain)
+
+
+def combined_js_script(rules: list[dict]):
+    """JS-правила (не скриптлеты) — одним скриптом, каждое со своей проверкой хоста и try;
+    правило с синтаксической ошибкой выбрасывается заранее (node --check)."""
+    parts, dropped = [], 0
+    for r in rules:
+        if not syntax_ok(js_script(r)["source"]):
+            dropped += 1
+            continue
+        parts.append("if(ok(" + rule_json(r) + ")){try{\n" + r["b"] + "\n}catch(e){}}")
+    if not parts:
+        return None, dropped
+    source = "(function(){\n" + MATCH_JS + "\n".join(parts) + "\n})();"
+    return {"kind": "js", "rules": len(parts), "source": source}, dropped
+
+
+def build_frames(sources: list[tuple[dict, str]], lib: Library) -> dict:
+    """Скриптлеты для фреймов из FRAME_SOURCES: [(описание источника, текст)]."""
+    rules: list[dict] = []
+    untrusted = 0
+    for meta, text in sources:
+        for r in extract(text, meta.get("syntax", "adguard"), scope=frame_scope):
+            if not meta.get("trusted"):
+                # trusted-скриптлеты и JS — только из доверенных списков.
+                if r["k"] == "j" or (r["k"] == "s" and r["a"][0].removeprefix("ubo-").startswith("trusted-")):
+                    untrusted += 1
+                    continue
+            rules.append(r)
+    rules = apply_exceptions(rules, lib)
+    scripts = []
+    main, missing = scriptlets_script([r for r in rules if r["k"] == "s"], lib)
+    if main:
+        if not syntax_ok(main["source"]):
+            raise RuntimeError("скрипт скриптлетов для фреймов не прошёл проверку синтаксиса")
+        scripts.append(main)
+    js, dropped = combined_js_script([r for r in rules if r["k"] == "j"])
+    if js:
+        if not syntax_ok(js["source"]):
+            raise RuntimeError("JS-правила для фреймов не прошли проверку синтаксиса")
+        scripts.append(js)
+    return {
+        "scripts": scripts,
+        "hosts": sorted({d for r in rules for d in r["d"]}),
+        "rules": sum(x["rules"] for x in scripts),
+        "missing": sorted(set(missing)),
+        "droppedSyntax": dropped,
+        "untrusted": untrusted,
+    }
+
+
+def build(rules_text: str, library_text: str, version: str, source_meta: dict,
+          frame_sources: list | None = None) -> dict:
     lib = Library(library_text)
     rules = apply_exceptions(extract(rules_text), lib)
     scriptlet_rules = [r for r in rules if r["k"] == "s"]
@@ -384,7 +502,14 @@ def build(rules_text: str, library_text: str, version: str, source_meta: dict) -
             dropped += 1
     hosts = sorted({d for r in rules for d in r["d"]})
     total = sum(s["rules"] for s in scripts)
+    frames = build_frames(frame_sources, lib) if frame_sources else None
+    extra = {}
+    if frames and frames["scripts"]:
+        extra = {"frameScripts": frames["scripts"], "frameHosts": frames["hosts"], "frameRules": frames["rules"],
+                 "frameMissing": frames["missing"], "frameDroppedSyntax": frames["droppedSyntax"],
+                 "frameUntrusted": frames["untrusted"]}
     return {
+        **extra,
         "schema": 1,
         "version": version,
         "library": lib.version,
@@ -404,6 +529,8 @@ def main() -> int:
     ap.add_argument("--manifest")
     ap.add_argument("--rules", help="файл списка вместо скачивания (для проверки)")
     ap.add_argument("--library", help="файл scriptlets.corelibs.json вместо скачивания")
+    ap.add_argument("--frame-dir", help="папка с <id>.txt списков для фреймов вместо скачивания")
+    ap.add_argument("--no-frames", action="store_true", help="без скриптлетов для фреймов")
     args = ap.parse_args()
 
     try:
@@ -421,7 +548,26 @@ def main() -> int:
     m = re.search(r"^!\s*Version:\s*(.+)$", rules_text, re.MULTILINE)
     meta = {"list": "AdGuard Base (Safari)", "listVersion": m.group(1).strip() if m else "", "listURL": rules_url,
             "libraryURL": lib_url}
-    data = build(rules_text, lib_text, args.version, meta)
+    frame_sources = []
+    for src in ([] if args.no_frames else FRAME_SOURCES):
+        try:
+            if src.get("file"):
+                text = open(os.path.join(HERE, src["file"]), encoding="utf-8").read()
+            elif args.frame_dir and os.path.exists(os.path.join(args.frame_dir, src["id"] + ".txt")):
+                text = open(os.path.join(args.frame_dir, src["id"] + ".txt"), encoding="utf-8").read()
+            else:
+                _, text = fetch(src["urls"])
+        except (RuntimeError, OSError) as exc:
+            print(f"::warning::скриптлеты для фреймов: {src['id']} не скачался ({exc})")
+            continue
+        frame_sources.append((src, text))
+        meta.setdefault("frameLists", []).append(src["title"])
+    data = build(rules_text, lib_text, args.version, meta, frame_sources)
+    if data.get("frameScripts"):
+        size = sum(len(x["source"]) for x in data["frameScripts"])
+        log(f"  для фреймов: правил {data['frameRules']}, хостов {len(data['frameHosts'])}, "
+            f"{size / 1024:.0f} КБ; нет в библиотеке: {', '.join(data['frameMissing']) or '—'}; "
+            f"недоверенных пропущено {data['frameUntrusted']}")
     log(f"скриптлеты AdGuard {data['version']}: правил {data['rules']}, скриптов {len(data['scripts'])}, "
         f"библиотека {data['library']}, список {meta['listVersion']}, хосты {', '.join(data['hosts'])}")
     if data["missing"]:

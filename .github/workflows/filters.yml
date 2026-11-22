@@ -60,6 +60,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Проверки сборщиков списков и скриптлетов (Python)
+        run: python3 -m unittest discover -s scripts/filters -p "test_*.py" -v
+
       - name: Сборка списков
         id: filters
         uses: ./.github/actions/build-filters
