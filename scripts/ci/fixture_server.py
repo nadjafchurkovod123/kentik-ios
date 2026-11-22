@@ -29,6 +29,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Cache-Control", "no-store")
+        # Плееры во фреймах ходят за VAST на «чужие» имена (в CI их указывает /etc/hosts сюда):
+        # без CORS XHR падал бы и без блокировщика — не отличить блокировку от ошибки.
+        self.send_header("Access-Control-Allow-Origin", "*")
         super().end_headers()
 
     def send_head(self):

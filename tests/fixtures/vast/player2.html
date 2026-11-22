@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Kentik VAST Player 2</title>
+<!--
+  Плеер 2 (kentik-player.test): правила, привязанные к хосту ФРЕЙМА, а не сайта сверху.
+    k  — запрос к vast-ads.kentik.test: в списках есть `||vast-ads.kentik.test^$domain=kentik-player.test`
+         (scripts/filters/kentik-fixes.txt). WebKit сверяет if-domain с главным документом,
+         поэтому без копии правила с if-frame-url запрос проходит;
+    kc — контроль: тот же сервер под именем vast-control.kentik.test (должен пройти);
+    p  — конфиг плеера с полями vast/adv/preroll: скриптлет json-prune из
+         scripts/filters/kentik-scriptlets.txt (скриптлеты для фреймов) вырезает их при JSON.parse.
+-->
+</head>
+<body style="margin:0;background:#000">
+<script>
+(function () {
+  var port = location.port ? ':' + location.port : '';
+  var res = {};
+  function report() { parent.postMessage({ kentikVast: 1, player: 'p2', result: res }, '*'); }
+  function xhr(key, url) {
+    return new Promise(function (resolve) {
+      var x = new XMLHttpRequest(), done = false;
+      function fin(v) { if (done) return; done = true; res[key] = v; report(); resolve(); }
+      x.open('GET', url);
+      x.onload = function () { fin(x.status === 200 ? 'OK' : 'S' + x.status); };
+      x.onerror = function () { fin('B'); };
+      setTimeout(function () { fin('T'); }, 10000);
+      x.send();
+    });
+  }
+  Promise.all([
+    xhr('k', 'http://vast-ads.kentik.test' + port + '/vast/zone.xml?slot=pre'),
+    xhr('kc', 'http://vast-control.kentik.test' + port + '/vast/zone.xml?slot=pre'),
+    fetch('/vast/config.json').then(function (r) { return r.text(); }).then(function (t) {
+      var c = JSON.parse(t);
+      res.p = ('vast' in c || 'adv' in c || 'preroll' in c) ? 'K' : (c.file ? 'P' : 'E');
+      report();
+    }).catch(function () { res.p = 'E'; report(); })
+  ]);
+})();
+</script>
+</body>
+</html>

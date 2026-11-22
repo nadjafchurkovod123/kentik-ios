@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kentik VAST</title>
+<!--
+  Сайт с сериалом «как kinogo.online»: плееры — в чужих iframe, реклама перед серией грузится
+  из плеера (VAST XHR, ролик), конфиг плеера несёт рекламные поля. В CI имена из /etc/hosts
+  указывают на сервер фикстур (127.0.0.1:8765), поэтому срабатывают настоящие правила списков:
+    kinogo.online       — сайт (этот документ);
+    cinemar.cc          — плеер 1 (как на kinogo.online): VAST с cvt-s2.agl008.shop, distribrey.com,
+                          r51.adstag0102.xyz, ролик с cdn.mbt-8.com, контроль — vast-control.kentik.test;
+    kentik-player.test  — плеер 2: правило `$domain=kentik-player.test` (только в этом фрейме)
+                          и скриптлет json-prune из списка Kentik — проверка правил для фреймов.
+  Итог — в заголовке: «VAST готово a=… d=… s=… m=… c=… v=… k=… kc=… p=…»
+  (B — заблокировано, OK — загрузилось, P — рекламные поля вырезаны, K — остались).
+-->
+<style>
+  body { margin: 0; background: #14101f; color: #fbfbfe; font: 15px -apple-system, system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 12px; }
+  iframe { display: block; width: 100%; height: 200px; border: 0; margin-bottom: 8px; background: #000; }
+  #res { margin: 12px; font: 13px ui-monospace, monospace; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h1>Менталист — серия 1</h1>
+<iframe id="p1" src="about:blank" allow="autoplay; fullscreen"></iframe>
+<iframe id="p2" src="about:blank" allow="autoplay; fullscreen"></iframe>
+<div id="res">ждём плееры…</div>
+<script>
+(function () {
+  var port = location.port ? ':' + location.port : '';
+  document.getElementById('p1').src = 'http://cinemar.cc' + port + '/vast/player.html';
+  document.getElementById('p2').src = 'http://kentik-player.test' + port + '/vast/player2.html';
+  var got = {}, need = ['p1', 'p2'];
+  var keys = { p1: ['a', 'd', 's', 'm', 'c', 'v'], p2: ['k', 'kc', 'p'] };
+  window.addEventListener('message', function (e) {
+    if (!e.data || e.data.kentikVast !== 1) return;
+    got[e.data.player] = e.data.result;
+    var done = need.every(function (k) {
+      return got[k] && keys[k].every(function (x) { return got[k][x]; });
+    });
+    var all = Object.assign({}, got.p1 || {}, got.p2 || {});
+    var parts = Object.keys(all).sort().map(function (k) { return k + '=' + all[k]; });
+    document.getElementById('res').textContent = JSON.stringify(got, null, 1);
+    document.title = (done ? 'VAST готово ' : 'VAST … ') + parts.join(' ');
+  });
+})();
+</script>
+</body>
+</html>

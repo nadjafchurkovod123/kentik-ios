@@ -115,6 +115,13 @@ jobs:
           done
           curl -sf "http://127.0.0.1:$FIXTURES_PORT/hello.html" | head -5
 
+      - name: Имена для фикстуры плееров (/etc/hosts)
+        run: |
+          echo "127.0.0.1 kinogo.online cinemar.cc cvt-s2.agl008.shop distribrey.com r51.adstag0102.xyz cdn.mbt-8.com kentik-player.test vast-ads.kentik.test vast-control.kentik.test # kentik-vast" | sudo tee -a /etc/hosts
+          sudo dscacheutil -flushcache || true
+          sudo killall -HUP mDNSResponder || true
+          curl -sf "http://cinemar.cc:$FIXTURES_PORT/vast/zone.xml" | head -2
+
       - name: Сборка для тестов
         run: |
           set -o pipefail
