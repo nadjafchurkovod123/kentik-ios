@@ -143,7 +143,7 @@ final class UIModelTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
         XCTAssertEqual(settings.searchEngine, .google)
         XCTAssertEqual(settings.addressBarPosition, .bottom)
-        XCTAssertFalse(settings.incognitoFaceID)
+        XCTAssertTrue(settings.incognitoFaceID, "Face ID для инкогнито по умолчанию включено (1.0.2)")
 
         settings.searchEngine = .yandex
         let url = try XCTUnwrap(AddressParser.url(from: "кентик браузер"))

@@ -32,7 +32,7 @@ final class Release102UITests: XCTestCase {
         // Инкогнито историю не пишет.
         kMenu(app, "Новая вкладка инкогнито")
         kTypeAddress(app, "\(Self.host)/secret.html")
-        kWaitTitle(app, "Kentik Secret")
+        kWaitTitle(app, "Kentik Secret", contains: true)
 
         // Обратно в обычные вкладки, новая вкладка — домашний экран с «Историей».
         let segment = kShowTabs(app, incognito: false)
@@ -115,7 +115,7 @@ final class Release102UITests: XCTestCase {
         XCTAssertTrue(kIsPurple(page), "новая вкладка инкогнито не фиолетовая: \(page)")
 
         kTypeAddress(app, "\(Self.host)/secret.html")
-        kWaitTitle(app, "Kentik Secret")
+        kWaitTitle(app, "Kentik Secret", contains: true)
         let pageShot = kShot(app, "p102-03-incognito-page")
         XCTAssertTrue(kIsPurple(kAverageColor(pageShot, in: app.buttons["backButton"].frame.insetBy(dx: -20, dy: 2))),
                       "панель под страницей инкогнито не фиолетовая")
@@ -149,6 +149,15 @@ final class Release102UITests: XCTestCase {
         let app = kLaunch(["-KentikFakeAuth"], start: "\(Self.fixtures)/hello.html")
         kWaitTitle(app, "Kentik Hello", timeout: 300)
 
+        // Настройка включена по умолчанию.
+        kMenu(app, "Настройки")
+        let toggle = app.switches["faceIDToggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10), "нет переключателя Face ID")
+        XCTAssertEqual(toggle.value as? String, "1", "Face ID для инкогнито по умолчанию выключено")
+        kShot(app, "f102-00-settings-faceid-on")
+        app.buttons["settingsDone"].tap()
+        sleep(1)
+
         kMenu(app, "Новая вкладка инкогнито")
         kAnswerFaceID(app, allow: false, "новая вкладка инкогнито (отмена)")
         sleep(1)
@@ -175,14 +184,7 @@ final class Release102UITests: XCTestCase {
         XCTAssertFalse(kFakeAuth(app).waitForExistence(timeout: 2), "Face ID спросили через пару секунд после ухода")
         XCTAssertTrue(app.staticTexts["Секрет-1"].waitForExistence(timeout: 5), "карточки инкогнито не видны")
         _ = segment
-
-        // Настройка включена по умолчанию.
-        app.buttons["doneTabs"].tap()
-        kMenu(app, "Настройки")
-        let toggle = app.switches["faceIDToggle"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 10), "нет переключателя Face ID")
-        XCTAssertEqual(toggle.value as? String, "1", "Face ID для инкогнито по умолчанию выключено")
-        kShot(app, "f102-02-settings-faceid-on")
+        kShot(app, "f102-02-incognito-again-no-face-id")
     }
 
     /// «Открыть в инкогнито» из меню ссылки сначала спрашивает Face ID.

@@ -48,6 +48,9 @@ final class IncognitoLock {
     private static var enabledNow: Bool {
         guard AppSettings.shared.incognitoFaceID else { return false }
         if TestHooks.fakeAuth { return true }
+        // В UI-тестах настоящий Face ID не используется (им нельзя управлять из теста): без
+        // тестового запроса замок выключен.
+        if TestHooks.isUITest { return false }
         return LAContext().canEvaluatePolicy(.deviceOwnerAuthentication, error: nil)
     }
 
