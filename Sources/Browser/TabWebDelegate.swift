@@ -25,6 +25,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
         } else if navigationAction.targetFrame?.isMainFrame ?? true {
             // Щит по настройкам сайта, куда идём: ставит/снимает списки до загрузки страницы.
             ContentBlocker.shared.prepareNavigation(of: webView, to: navigationAction.request.url)
+            AdGuardScriptlets.shared.prepareNavigation(of: webView, to: navigationAction.request.url)
         }
         decisionHandler(policy)
     }
@@ -36,6 +37,7 @@ final class TabWebDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         if let tab { GuardState.shared.recordCommit(on: tab) }
+        tab?.noteCommitted()
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {

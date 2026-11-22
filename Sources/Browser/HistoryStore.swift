@@ -20,7 +20,15 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
 @MainActor
 final class HistoryStore: ObservableObject {
 
-    static let shared = HistoryStore(fileURL: HistoryStore.defaultFileURL, persist: !TestHooks.isUITest)
+    static let shared: HistoryStore = {
+        // UI-тест восстановления (-KentikPersistSession) пишет историю на диск, как у
+        // пользователя; -KentikFreshHistory — начать с пустой.
+        let persist = !TestHooks.isUITest || TestHooks.persistSession
+        if persist, TestHooks.isUITest, TestHooks.freshHistory {
+            try? FileManager.default.removeItem(at: HistoryStore.defaultFileURL)
+        }
+        return HistoryStore(fileURL: HistoryStore.defaultFileURL, persist: persist)
+    }()
 
     /// Не больше стольких адресов (старые вытесняются).
     static let limit = 5000
@@ -29,6 +37,9 @@ final class HistoryStore: ObservableObject {
 
     private let fileURL: URL?
     private var saveScheduled = false
+    /// Файл истории есть, но не прочитался (например, iPhone был заперт и файл недоступен):
+    /// перед записью дочитываем его, чтобы не затереть старую историю новой.
+    private var needsMerge = false
 
     init(fileURL: URL?, persist: Bool = true) {
         self.fileURL = persist ? fileURL : nil
@@ -135,10 +146,34 @@ final class HistoryStore: ObservableObject {
     // MARK: - Диск
 
     private func load() {
-        guard let fileURL, let data = try? Data(contentsOf: fileURL) else { return }
+        guard let fileURL else { return }
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return }
+        guard let data = try? Data(contentsOf: fileURL) else {
+            needsMerge = true
+            NSLog("[Kentik] история не прочиталась — дочитаю перед записью")
+            return
+        }
+        entries = Self.decode(data) ?? []
+    }
+
+    private static func decode(_ data: Data) -> [HistoryEntry]? {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .secondsSince1970
-        entries = (try? decoder.decode([HistoryEntry].self, from: data)) ?? []
+        return try? decoder.decode([HistoryEntry].self, from: data)
+    }
+
+    /// Дочитать недоступный раньше файл и слить с тем, что набралось с запуска.
+    /// false — файл всё ещё недоступен (писать нельзя, иначе старая история пропадёт).
+    private func mergeIfNeeded() -> Bool {
+        guard needsMerge, let fileURL else { return true }
+        guard let data = try? Data(contentsOf: fileURL) else { return false }
+        needsMerge = false
+        let old = Self.decode(data) ?? []
+        let known = Set(entries.map(\.url))
+        entries = (entries + old.filter { !known.contains($0.url) })
+            .sorted { $0.lastVisit > $1.lastVisit }
+        if entries.count > Self.limit { entries.removeLast(entries.count - Self.limit) }
+        return true
     }
 
     private func scheduleSave() {
@@ -152,13 +187,15 @@ final class HistoryStore: ObservableObject {
 
     /// Записать на диск сразу (при уходе приложения в фон).
     func saveNow() {
-        guard let fileURL else { return }
+        guard let fileURL, mergeIfNeeded() else { return }
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .secondsSince1970
         guard let data = try? encoder.encode(entries) else { return }
         try? FileManager.default.createDirectory(
             at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? data.write(to: fileURL, options: [.atomic, .completeFileProtection])
+        // «До первой разблокировки»: файл доступен и в фоне при запертом iPhone — запись при
+        // уходе в фон и чтение при запуске не упираются в защиту данных.
+        try? data.write(to: fileURL, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
 }
 

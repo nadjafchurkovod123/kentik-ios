@@ -50,6 +50,12 @@ final class Tab {
     private(set) var canGoForward = false
     /// Падения процесса страницы и отложенная перезагрузка.
     private(set) var crashRecovery = CrashRecovery()
+    /// Адрес последней открывшейся (commit) страницы главного фрейма: история пишется с этого
+    /// момента, не дожидаясь конца загрузки (сайты с плеерами и рекламой «грузятся» долго).
+    private(set) var committedURL: URL?
+    /// Только что закончился полноэкранный режим WebKit (браузер проверит, что веб-вью на месте).
+    var fullscreenJustEnded = false
+    private var lastFullscreenState: WKWebView.FullscreenState = .notInFullscreen
 
     // Счётчики щита для этой вкладки. Пишет Browser (по решениям PopupGuard/RedirectGuard)
     // и модуль Blocking; UI читает через ShieldControlling.stats(for:).
@@ -155,6 +161,13 @@ final class Tab {
         webView.removeFromSuperview()
     }
 
+    /// В главном фрейме открылась новая страница (didCommit).
+    func noteCommitted() {
+        committedURL = webView.url
+        if webView.url != nil { requestedURL = nil }
+        notifyChanged()
+    }
+
     /// Сообщить менеджеру (и через него UI), что состояние вкладки изменилось.
     func notifyChanged() {
         manager?.tabDidUpdate(self)
@@ -174,6 +187,18 @@ final class Tab {
             webView.observe(\.isLoading, options: [.new]) { wv, _ in handler(wv) },
             webView.observe(\.canGoBack, options: [.new]) { wv, _ in handler(wv) },
             webView.observe(\.canGoForward, options: [.new]) { wv, _ in handler(wv) },
+            webView.observe(\.fullscreenState, options: [.new]) { [weak self] wv, _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    let state = wv.fullscreenState
+                    if state == .notInFullscreen, self.lastFullscreenState != .notInFullscreen {
+                        self.fullscreenJustEnded = true
+                    }
+                    self.lastFullscreenState = state
+                    DiagProbe.event("fullscreen", ["state": state.rawValue])
+                    self.notifyChanged()
+                }
+            },
         ]
     }
 

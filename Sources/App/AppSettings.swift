@@ -55,6 +55,9 @@ final class AppSettings {
         static let searchEngine = "settings.searchEngine"
         static let addressBar = "settings.addressBarPosition"
         static let incognitoFaceID = "settings.incognitoFaceID"
+        /// Пользователь сам менял «Face ID для инкогнито» (до 1.0.2 ключа не было: тогда
+        /// признак — само сохранённое значение, его писал только переключатель).
+        static let incognitoFaceIDChanged = "settings.incognitoFaceIDChanged"
     }
 
     init(defaults: UserDefaults = .standard) {
@@ -78,13 +81,20 @@ final class AppSettings {
         }
     }
 
-    /// Face ID для вкладок инкогнито (по умолчанию выключено).
+    /// Face ID для инкогнито. По умолчанию включено — в том числе у тех, кто обновился с 1.0.1
+    /// и переключатель не трогал; выбор пользователя (включил или выключил сам) сохраняется.
     var incognitoFaceID: Bool {
-        get { defaults.bool(forKey: Key.incognitoFaceID) }
+        get { incognitoFaceIDChangedByUser ? defaults.bool(forKey: Key.incognitoFaceID) : true }
         set {
             defaults.set(newValue, forKey: Key.incognitoFaceID)
+            defaults.set(true, forKey: Key.incognitoFaceIDChanged)
             notify()
         }
+    }
+
+    /// Пользователь сам менял настройку Face ID.
+    var incognitoFaceIDChangedByUser: Bool {
+        defaults.bool(forKey: Key.incognitoFaceIDChanged) || defaults.object(forKey: Key.incognitoFaceID) != nil
     }
 
     /// Передаёт выбранный поисковик в AddressParser.

@@ -271,14 +271,26 @@ enum DiagProbe {
       function r(el) { var b = el.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)]; }
       function vis(el) { var c = getComputedStyle(el); return c.display + '/' + c.visibility + '/' + c.opacity; }
       function desc(el) { return (el.tagName + (el.id ? '#' + el.id : '') + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\s+/).slice(0, 3).join('.') : '')).slice(0, 100); }
+      // Видео и iframe и в открытых shadow root (плееры-веб-компоненты, например cdnvideohub).
+      function deepAll(sel) {
+        var out = [], stack = [document];
+        while (stack.length && out.length < 50) {
+          var root = stack.pop();
+          try { out.push.apply(out, [].slice.call(root.querySelectorAll(sel))); } catch (e) {}
+          var all = root.querySelectorAll ? root.querySelectorAll('*') : [];
+          for (var i = 0; i < all.length && i < 4000; i++) if (all[i].shadowRoot) stack.push(all[i].shadowRoot);
+        }
+        return out;
+      }
+      window.__kentikDeepAll = deepAll;
       function report() {
         try {
-          var vids = [].slice.call(document.querySelectorAll('video')).map(function (v) {
+          var vids = deepAll('video').map(function (v) {
             return { rect: r(v), vis: vis(v), paused: v.paused, t: Math.round(v.currentTime * 10) / 10, rs: v.readyState, ns: v.networkState,
                      w: v.videoWidth, h: v.videoHeight, muted: v.muted, src: String(v.currentSrc || v.src || '').slice(0, 160),
                      err: v.error ? v.error.code : 0, fsNative: !!v.webkitDisplayingFullscreen, mode: v.webkitPresentationMode || '' };
           });
-          var ifr = [].slice.call(document.querySelectorAll('iframe')).map(function (f) {
+          var ifr = deepAll('iframe').map(function (f) {
             return { rect: r(f), vis: vis(f), src: String(f.src || '').slice(0, 160), dataSrc: String(f.getAttribute('data-src') || '').slice(0, 120),
                      allow: f.getAttribute('allow'), afs: f.hasAttribute('allowfullscreen'), kh: f.getAttribute('data-kentik-hidden') };
           }).filter(function (f) { return f.rect[2] > 0 || f.src; }).slice(0, 15);

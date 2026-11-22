@@ -23,7 +23,7 @@ jobs:
   build:
     name: Сборка, тесты, IPA
     runs-on: macos-26
-    timeout-minutes: 75
+    timeout-minutes: 120
     env:
       FIXTURES_PORT: "8765"
     steps:
@@ -67,6 +67,13 @@ jobs:
         run: |
           python3 scripts/ci/build_ad_hosts.py Sources/Resources/ad_hosts.json
           ls -lh Sources/Resources/ad_hosts.json
+
+      # Скриптлеты AdGuard против рекламы в плеере YouTube (Guard/AdGuardScriptlets.swift):
+      # встроенный набор; свежий приложение берёт из релиза «lists» (ключ "adguard").
+      - name: Сборка скриптлетов AdGuard (adguard.json)
+        run: |
+          python3 scripts/filters/build_adguard.py Sources/Resources/adguard.json
+          ls -lh Sources/Resources/adguard.json || echo "::warning::adguard.json не собран"
 
       # Версия: на теге v1.2.3 — 1.2.3 (AltStore сверяет её с источником), иначе — из project.yml.
       # Номер сборки — номер запуска CI, он только растёт.
@@ -138,12 +145,13 @@ jobs:
             "${FILTER[@]}" \
             | xcbeautify --renderer github-actions
 
-      # Настоящие сайты с рекламой (ВКЛ/ВЫКЛ рядом). Живые сайты меняются и бывают
-      # недоступны — шаг не валит сборку, его задача — снимки для глаз.
+      # Настоящие сайты с рекламой (ВКЛ/ВЫКЛ рядом), сайты с сериалами и YouTube
+      # (SeriesDiagUITests: плеер, весь экран, реклама; состояние — артефакт diag). Живые сайты
+      # меняются и бывают недоступны — шаг не валит сборку, его задача — снимки и данные.
       - name: Настоящие сайты (снимки, может моргать)
         if: ${{ !cancelled() && !inputs.only_testing }}
         continue-on-error: true
-        timeout-minutes: 30
+        timeout-minutes: 55
         run: |
           set -o pipefail
           xcodebuild test-without-building \
@@ -153,6 +161,7 @@ jobs:
             -resultBundlePath build/RealSites.xcresult \
             -parallel-testing-enabled NO \
             -only-testing:KentikUITests/RealSitesUITests \
+            -only-testing:KentikUITests/SeriesDiagUITests \
             | xcbeautify --renderer github-actions
 
       - name: Снимки экрана из .xcresult

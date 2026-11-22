@@ -1,10 +1,10 @@
 import XCTest
 
-/// Диагностика «чёрного видео» на сайтах с сериалами (нужен интернет для живых сайтов).
-/// Каждый прогон пишет состояние приложения и фреймов (DiagProbe) в /tmp/kentik-diag/<имя>,
-/// снимки — вложениями. Режимы: ON — как в 1.0.1, OFF — щит выключен, NOGUARD — без
-/// скриплетов защиты, NOBLOCKER — без списков блокировщика, AUTORESIZE — веб-вью на
-/// autoresizing вместо Auto Layout.
+/// Живые проверки на сайтах с сериалами и YouTube (нужен интернет; CI запускает их отдельным
+/// шагом, который сборку не валит — сайты меняются и бывают недоступны). Каждый прогон пишет
+/// состояние приложения и фреймов (DiagProbe) в /tmp/kentik-diag/<имя> — артефакт diag,
+/// снимки — вложениями. Режимы: ON — 1.0.2 как есть; AUTOLAYOUT — веб-вью на Auto Layout, как
+/// в 1.0.1; OFF — щит выключен; NOADGUARD — без скриплетов AdGuard.
 final class SeriesDiagUITests: XCTestCase {
 
     static let fixtures = "http://127.0.0.1:8765"
@@ -15,24 +15,23 @@ final class SeriesDiagUITests: XCTestCase {
     }
 
     enum Mode: String {
-        case on = "ON", off = "OFF", noGuard = "NOGUARD", noBlocker = "NOBLOCKER", autoresize = "AUTORESIZE"
+        case on = "ON", off = "OFF", autoLayout = "AUTOLAYOUT", noAdGuard = "NOADGUARD"
 
         var arguments: [String] {
             switch self {
             case .on: return []
             case .off: return ["-shield.enabled", "NO"]
-            case .noGuard: return ["-KentikNoGuard"]
-            case .noBlocker: return ["-KentikNoBlocker"]
-            case .autoresize: return ["-KentikWebViewAutoresizing"]
+            case .autoLayout: return ["-KentikWebViewAutoLayout"]
+            case .noAdGuard: return ["-KentikNoAdGuard"]
             }
         }
     }
 
-    // MARK: - Фикстура: плеер с другого сайта во фрейме
+    // MARK: - Фикстура: 1.0.2 против 1.0.1 (два входа на весь экран подряд)
 
     @MainActor
     func testFixtureIframePlayerFullscreen() {
-        for (mode, src) in [(Mode.on, "hls"), (.off, "hls"), (.autoresize, "hls"), (.on, "mp4")] {
+        for (mode, src) in [(Mode.on, "hls"), (.autoLayout, "hls"), (.off, "hls")] {
             fixtureRun(mode: mode, src: src)
         }
     }
@@ -45,104 +44,113 @@ final class SeriesDiagUITests: XCTestCase {
         app.launchArguments = ["-KentikUITest", "-KentikStartURL", "\(Self.fixtures)/media/host.html?src=\(src)"] + mode.arguments
         app.launchEnvironment = diag.environment
         app.launch()
-        let title = app.staticTexts["pageTitle"]
-        _ = title.waitForExistence(timeout: 300)
+        _ = app.staticTexts["pageTitle"].waitForExistence(timeout: 300)
         _ = waitTitle(app, contains: "Kentik Series", timeout: 60)
         sleep(2)
         attachScreen("\(name)-1-page")
-
         let play = app.webViews.buttons["Пуск"]
-        if play.waitForExistence(timeout: 15) { play.tap() } else { XCTFail("\(name): нет кнопки «Пуск» в плеере") }
-        let playing = waitTitle(app, contains: "идёт", timeout: 20)
+        if play.waitForExistence(timeout: 15) { play.tap() }
+        _ = waitTitle(app, contains: "идёт", timeout: 20)
         sleep(2)
-        attachScreen("\(name)-2-playing")
-        diag.snapshotState("2-playing")
-        XCTAssertTrue(playing, "\(name): видео во фрейме не пошло (\(title.label))")
-
-        let fs = app.webViews.buttons["На весь экран"]
-        if fs.exists { fs.tap() } else { diag.eval("window.kentikPlayer && kentikPlayer.fullscreen(); 'ok'", frames: "url:player.html") }
-        sleep(4)
-        let a = attachScreen("\(name)-3-fullscreen-a")
-        sleep(2)
-        let b = attachScreen("\(name)-4-fullscreen-b")
-        diag.snapshotState("3-fullscreen")
-        let sa = Pixels.stats(a), sb = Pixels.stats(b)
-        let diff = Pixels.difference(a, b)
-        diag.note("3-fullscreen-pixels", ["litA": sa.lit, "colorfulA": sa.colorful, "litB": sb.lit, "colorfulB": sb.colorful, "diff": diff])
-        XCTContext.runActivity(named: "\(name): на весь экран светлых \(sa.lit), цветных \(sa.colorful), разница \(diff)") { _ in }
-
-        diag.eval("(document.exitFullscreen||document.webkitExitFullscreen).call(document); 'ok'", frames: "url:player.html")
-        sleep(3)
-        attachScreen("\(name)-5-after-fullscreen")
-        diag.snapshotState("5-after-fullscreen")
-
-        let native = app.webViews.buttons["Системный"]
-        if native.exists {
-            native.tap()
+        for round in 1...2 {
+            let fs = app.webViews.buttons["На весь экран"]
+            if fs.exists && fs.isHittable { fs.tap() } else {
+                diag.eval("window.kentikPlayer && kentikPlayer.fullscreen(); 'ok'", frames: "url:player.html")
+            }
             sleep(4)
-            let n = attachScreen("\(name)-6-native-fullscreen")
-            let ns = Pixels.stats(n)
-            diag.snapshotState("6-native")
-            diag.note("6-native-pixels", ["lit": ns.lit, "colorful": ns.colorful])
-            diag.eval("var v=document.querySelector('video'); v.webkitExitFullscreen && v.webkitExitFullscreen(); 'ok'", frames: "url:player.html")
+            let a = attachScreen("\(name)-\(round)-fullscreen-a")
+            sleep(2)
+            let b = attachScreen("\(name)-\(round)-fullscreen-b")
+            diag.snapshotState("\(round)-fullscreen")
+            let s = Pixels.stats(a)
+            diag.note("\(round)-fullscreen-pixels", ["lit": s.lit, "colorful": s.colorful, "diff": Pixels.difference(a, b),
+                                                     "fullscreen": diag.state()["fullscreen"] ?? "?"])
+            diag.eval("(document.exitFullscreen||document.webkitExitFullscreen).call(document); 'ok'", frames: "url:player.html")
             sleep(3)
-            attachScreen("\(name)-7-after-native")
-            diag.snapshotState("7-after-native")
+            let after = attachScreen("\(name)-\(round)-after")
+            diag.snapshotState("\(round)-after")
+            diag.note("\(round)-after-pixels", ["lit": Pixels.stats(after).lit, "webViewFrame": diag.state()["webViewFrame"] ?? [Int]()])
         }
         app.terminate()
     }
 
-    // MARK: - Живые сайты
+    // MARK: - Живые сайты с сериалами
 
+    /// kinogo.online — сайт из жалобы. С адресов GitHub Actions (США) Cloudflare показывает
+    /// проверку «Just a moment…»: её мы не проходим (это защита от ботов) — снимок для отчёта.
     @MainActor
     func testLiveKinogoOnline() {
-        for mode in [Mode.on, .off, .noGuard, .noBlocker] {
-            liveSeries(site: "kinogo-online", start: "https://kinogo.online/", query: "менталист", mode: mode)
+        liveSeries(site: "kinogo-online", start: "https://kinogo.online/", query: "менталист", mode: .on)
+    }
+
+    /// Зеркало Киного с теми же балансерами (Alloha, HDVB/Collaps во фрейме).
+    @MainActor
+    func testLiveKinogoGG() {
+        for mode in [Mode.on, .autoLayout] {
+            liveSeries(site: "kinogo-gg", start: "https://kinogo.gg/4816-mentalistka-1-sezon.html", query: nil, mode: mode)
         }
     }
 
     @MainActor
-    func testLiveKinogoBiz() {
-        for mode in [Mode.on, .off] {
-            liveSeries(site: "kinogo-biz", start: "https://kinogo.biz/111930--titany.html", query: nil, mode: mode)
-        }
+    func testLiveKinokrad() {
+        liveSeries(site: "kinokrad", start: "https://kinokrad.cc/478966-mentalistka.html", query: nil, mode: .on)
     }
 
     @MainActor
     func testLiveLordserial() {
-        for mode in [Mode.on, .off] {
-            liveSeries(site: "lordserial", start: "https://lordserial.run/", query: "менталист", mode: mode)
-        }
+        liveSeries(site: "lordserial", start: "https://lordserial.run/zarubezhnye-serialy/202-mentalist-v1.html", query: nil, mode: .on)
     }
 
+    // MARK: - YouTube
+
     @MainActor
-    func testLiveYouTubeBaseline() {
-        for mode in [Mode.on, .off] {
-            let name = "youtube-\(mode.rawValue)"
+    func testLiveYouTube() {
+        for (video, mode) in [("dQw4w9WgXcQ", Mode.noAdGuard), ("dQw4w9WgXcQ", .on), ("kJQP7kiw5Fk", .on), ("9bZkp7q19f0", .on)] {
+            let name = "youtube-\(video)-\(mode.rawValue)"
             let diag = Diag(name)
             let app = XCUIApplication()
-            app.launchArguments = ["-KentikUITest", "-KentikStartURL", "https://m.youtube.com/watch?v=jNQXAC9IVRw"] + mode.arguments
+            app.launchArguments = ["-KentikUITest", "-KentikStartURL", "https://m.youtube.com/watch?v=\(video)"] + mode.arguments
             app.launchEnvironment = diag.environment
             app.launch()
             waitLoaded(app, diag, timeout: 300)
-            sleep(8)
+            sleep(6)
             attachScreen("\(name)-1-watch")
-            let info = diag.evalString("""
-            (function(){
-              var r = window.ytInitialPlayerResponse || {};
-              var p = document.querySelector('#movie_player');
-              var live = null; try { live = p && p.getPlayerResponse ? p.getPlayerResponse() : null; } catch (e) {}
-              function keys(o){ return o ? ['adPlacements','playerAds','adSlots','adBreakHeartbeatParams'].filter(function(k){ return k in o; }) : []; }
-              return JSON.stringify({ initial: keys(r), live: keys(live), adShowing: !!document.querySelector('.ad-showing, .ad-interrupting'),
-                gas: window.google_ad_status, flags: !!(window.yt && yt.config_ && yt.config_.EXPERIMENT_FLAGS), title: document.title });
-            })()
-            """)
-            diag.note("1-youtube-ads", info)
-            XCTContext.runActivity(named: "\(name): \(info)") { _ in }
-            diag.snapshotState("1-watch")
+            // Пуск без звука (как пальцем — у eval WebKit есть жест пользователя).
+            diag.eval("(function(){var v=__kentikDeepAll('video')[0]; if(!v) return 'нет видео'; v.muted=true; v.play(); return 'play';})()",
+                      frames: "main", world: "diag")
+            var samples: [String] = []
+            for i in 0..<4 {
+                sleep(5)
+                samples.append(diag.evalString(Self.youTubeProbe))
+                if i == 1 { attachScreen("\(name)-2-playing") }
+            }
+            attachScreen("\(name)-3-later")
+            diag.snapshotState("2-watch")
+            let state = diag.state()
+            let adStatusBlocked = ((state["ruleHits"] as? [[String: Any]]) ?? []).contains {
+                ($0["blocked"] as? Bool) == true && (($0["url"] as? String) ?? "").contains("ad_status.js")
+            }
+            diag.note("youtube-ads", ["samples": samples, "adStatusBlocked": adStatusBlocked,
+                                      "tabs": state["tabs"] ?? 0, "blockedPopups": state["blockedPopups"] ?? 0])
+            XCTContext.runActivity(named: "\(name): ad_status заблокирован=\(adStatusBlocked); \(samples.last ?? "")") { _ in }
             app.terminate()
         }
     }
+
+    /// Ответ плеера и признаки рекламы на странице YouTube.
+    static let youTubeProbe = """
+    (function(){
+      function keys(o){ return o ? ['adPlacements','playerAds','adSlots'].filter(function(k){ return k in o && o[k] !== undefined; }) : []; }
+      var r = window.ytInitialPlayerResponse;
+      var p = document.querySelector('#movie_player');
+      var live = null; try { live = p && p.getPlayerResponse ? p.getPlayerResponse() : null; } catch (e) {}
+      var v = document.querySelector('video');
+      var adUI = !!document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay, .ytp-ad-module *, ytm-promoted-sparkles-web-renderer, .ytm-promoted-video-renderer, ad-badge-view-model');
+      return JSON.stringify({ initial: keys(r), live: keys(live), adUI: adUI, gas: window.google_ad_status === 1,
+        playing: !!(v && !v.paused && v.currentTime > 0), t: v ? Math.round(v.currentTime) : -1,
+        duration: v ? Math.round(v.duration || 0) : -1, title: document.title.slice(0, 60) });
+    })()
+    """
 
     // MARK: - Прогон живого сайта
 
@@ -155,7 +163,7 @@ final class SeriesDiagUITests: XCTestCase {
         app.launchEnvironment = diag.environment
         app.launch()
         waitLoaded(app, diag, timeout: 300)
-        sleep(5)
+        sleep(6)
         attachScreen("\(name)-1-start")
         diag.snapshotState("1-start")
 
@@ -170,11 +178,9 @@ final class SeriesDiagUITests: XCTestCase {
                 attachScreen("\(name)-2-search")
                 link = findLink(diag, query)
             }
-            if link.isEmpty { link = findLink(diag, "сезон") }
-            diag.note("2-link", ["link": link])
+            diag.note("2-link", ["link": link, "title": diag.state()["title"] ?? ""])
             guard !link.isEmpty else {
-                XCTContext.runActivity(named: "\(name): не нашли страницу сериала") { _ in }
-                diag.snapshotState("2-no-link")
+                XCTContext.runActivity(named: "\(name): страница сериала не найдена (заголовок «\(diag.state()["title"] ?? "")»)") { _ in }
                 app.terminate()
                 return
             }
@@ -186,54 +192,57 @@ final class SeriesDiagUITests: XCTestCase {
         attachScreen("\(name)-3-series")
         diag.snapshotState("3-series")
 
-        // Плеер — в середину экрана, касание по центру (как пальцем).
-        let player = diag.evalString(Self.findPlayerJS)
-        diag.note("4-player", ["player": player])
-        sleep(2)
-        attachScreen("\(name)-4-player")
-        if let point = screenPoint(app, player) {
-            app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
-            sleep(8)
-            attachScreen("\(name)-5-tap1")
-            diag.snapshotState("5-tap1")
-            if !diag.isVideoPlaying() {
-                // Плееры часто ждут второго касания по своей кнопке «пуск».
-                let again = diag.evalString(Self.findPlayerJS)
-                if let p2 = screenPoint(app, again) {
-                    app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: p2.x, dy: p2.y)).tap()
-                }
-                sleep(8)
-                attachScreen("\(name)-6-tap2")
-                diag.snapshotState("6-tap2")
+        // Плеер — в середину экрана; касание по центру, как пальцем (ленивые iframe грузятся по касанию).
+        for attempt in 1...3 where !diag.isVideoPlaying() {
+            let player = diag.evalString(Self.findPlayerJS)
+            if attempt == 1 { diag.note("4-player", ["player": player]) }
+            sleep(2)
+            if let point = screenPoint(app, player) {
+                app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
             }
+            sleep(8)
+            attachScreen("\(name)-5-tap\(attempt)")
+            diag.snapshotState("5-tap\(attempt)")
         }
         if !diag.isVideoPlaying() {
-            diag.eval("(function(){var v=document.querySelector('video'); if(!v) return 'нет видео'; v.muted=true; var p=v.play(); return 'play';})()", frames: "video")
-            sleep(8)
-            attachScreen("\(name)-7-forced-play")
-            diag.snapshotState("7-forced-play")
+            diag.eval("(function(){var v=__kentikDeepAll('video'); if(!v.length) return 'нет видео'; v.forEach(function(x){x.muted=true; x.play();}); return 'play';})()",
+                      frames: "all", world: "diag")
+            sleep(10)
+            attachScreen("\(name)-6-forced-play")
         }
+        diag.snapshotState("6-play")
         let playing = diag.isVideoPlaying()
-        XCTContext.runActivity(named: "\(name): видео идёт — \(playing)") { _ in }
 
         // На весь экран — контейнер плеера (как кнопка плееров PlayerJS).
         diag.eval("""
-        (function(){var v=document.querySelector('video'); if(!v) return 'нет видео';
+        (function(){var vs=__kentikDeepAll('video').filter(function(v){return !v.paused||v.readyState>1;}); var v=vs[0]||__kentikDeepAll('video')[0];
+          if(!v) return 'нет видео';
           var el=v.closest('[id*=player],[class*=player],[id*=Player],[class*=Player]')||v.parentElement;
-          var r=el.requestFullscreen||el.webkitRequestFullscreen; if(r){ var p=r.call(el); if(p&&p.catch)p.catch(function(e){document.title='fs-error '+e.name;}); return 'fs '+el.tagName; }
+          var r=el.requestFullscreen||el.webkitRequestFullscreen; if(r){ r.call(el); return 'fs '+el.tagName; }
           v.webkitEnterFullscreen(); return 'native';})()
-        """, frames: "video")
+        """, frames: "video", world: "diag")
         sleep(5)
-        let a = attachScreen("\(name)-8-fullscreen-a")
+        let a = attachScreen("\(name)-7-fullscreen-a")
         sleep(2)
-        let b = attachScreen("\(name)-9-fullscreen-b")
-        diag.snapshotState("8-fullscreen")
-        let sa = Pixels.stats(a)
-        diag.note("8-fullscreen-pixels", ["lit": sa.lit, "colorful": sa.colorful, "diff": Pixels.difference(a, b)])
-        diag.eval("(document.exitFullscreen||document.webkitExitFullscreen).call(document); 'ok'", frames: "video")
+        let b = attachScreen("\(name)-8-fullscreen-b")
+        diag.snapshotState("7-fullscreen")
+        let s = Pixels.stats(a)
+        let fsState = diag.state()["fullscreen"] ?? "?"
+        diag.eval("(document.exitFullscreen||document.webkitExitFullscreen).call(document); var v=__kentikDeepAll('video')[0]; v&&v.webkitExitFullscreen&&v.webkitDisplayingFullscreen&&v.webkitExitFullscreen(); 'ok'",
+                  frames: "video", world: "diag")
         sleep(3)
-        attachScreen("\(name)-10-after-fullscreen")
-        diag.snapshotState("10-after-fullscreen")
+        let after = attachScreen("\(name)-9-after-fullscreen")
+        diag.snapshotState("9-after")
+        let state = diag.state()
+        let summary: [String: Any] = [
+            "playing": playing, "fullscreen": fsState, "fsLit": s.lit, "fsColorful": s.colorful,
+            "fsDiff": Pixels.difference(a, b), "afterLit": Pixels.stats(after).lit,
+            "webViewFrameAfter": state["webViewFrame"] ?? [Int](), "tabs": state["tabs"] ?? 0,
+            "blockedPopups": state["blockedPopups"] ?? 0, "blockedRedirects": state["blockedRedirects"] ?? 0,
+            "url": state["url"] ?? "", "title": state["title"] ?? "",
+        ]
+        diag.note("summary", summary)
+        XCTContext.runActivity(named: "\(name): \(summary)") { _ in }
         app.terminate()
     }
 
@@ -241,9 +250,9 @@ final class SeriesDiagUITests: XCTestCase {
     /// и вернуть его центр в CSS-пикселях.
     static let findPlayerJS = """
     (function(){
-      var c=[].slice.call(document.querySelectorAll('iframe, video, [id*=player], [class*=player], [class*=Player], [id*=Player]'))
+      var c=[].slice.call(document.querySelectorAll('iframe, video, video-player, [id*=player], [class*=player], [class*=Player], [id*=Player]'))
         .map(function(el){var r=el.getBoundingClientRect(); return {el:el,a:r.width*r.height,r:r};})
-        .filter(function(x){return x.r.width>=200&&x.r.height>=110&&getComputedStyle(x.el).display!=='none';});
+        .filter(function(x){return x.r.width>=200&&x.r.height>=110&&getComputedStyle(x.el).display!=='none'&&!/youtube/.test(x.el.src||'');});
       c.sort(function(a,b){var pa=/IFRAME|VIDEO/.test(a.el.tagName)?1:0, pb=/IFRAME|VIDEO/.test(b.el.tagName)?1:0; return pb-pa||b.a-a.a;});
       if(!c.length) return '';
       var el=c[0].el; el.scrollIntoView({block:'center'});

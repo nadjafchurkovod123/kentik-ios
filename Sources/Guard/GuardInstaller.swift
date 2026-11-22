@@ -80,6 +80,7 @@ enum GuardInstaller {
         guard observer == nil else { return }
         AdHosts.shared.add(GuardTestHooks.extraAdHosts)
         AdHosts.shared.preload()
+        AdGuardScriptlets.shared.loadIfNeeded()
         observer = NotificationCenter.default.addObserver(
             forName: .shieldSettingsChanged, object: nil, queue: .main
         ) { _ in

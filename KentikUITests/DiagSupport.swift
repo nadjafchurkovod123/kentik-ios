@@ -44,8 +44,8 @@ final class Diag {
     /// Выполнить JavaScript во фреймах ("main", "all", "video", "url:<часть адреса>").
     /// Результат — значения по фреймам (строки, числа, словари).
     @discardableResult
-    func eval(_ js: String, frames: String = "main", timeout: TimeInterval = 25) -> [Any] {
-        guard let result = send(["op": "eval", "js": js, "frames": frames], timeout: timeout),
+    func eval(_ js: String, frames: String = "main", world: String = "page", timeout: TimeInterval = 25) -> [Any] {
+        guard let result = send(["op": "eval", "js": js, "frames": frames, "world": world], timeout: timeout),
               let results = result["results"] as? [[String: Any]] else { return [] }
         return results.compactMap { $0["value"] }
     }

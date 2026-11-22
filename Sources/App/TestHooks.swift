@@ -26,10 +26,27 @@ enum TestHooks {
     static var fakeAuth: Bool { arguments.contains("-KentikFakeAuth") }
 
     /// Опыты для диагностики (DiagProbe): без скриплетов защиты Guard / без списков
-    /// блокировщика / веб-вью на autoresizing вместо Auto Layout.
+    /// блокировщика / веб-вью на Auto Layout, как в 1.0.1 (для сравнения).
     static var noGuard: Bool { arguments.contains("-KentikNoGuard") }
     static var noBlocker: Bool { arguments.contains("-KentikNoBlocker") }
-    static var webViewAutoresizing: Bool { arguments.contains("-KentikWebViewAutoresizing") }
+    static var webViewAutoLayout: Bool { arguments.contains("-KentikWebViewAutoLayout") }
+    /// Без скриптлетов AdGuard (сравнение «как в 1.0.1» на YouTube).
+    static var noAdGuard: Bool { arguments.contains("-KentikNoAdGuard") }
+
+    /// -KentikIncognitoGrace <секунды> — сколько можно пробыть на обычных вкладках, не запирая
+    /// инкогнито (по умолчанию 30 с; тестам нужно короче).
+    static var incognitoGrace: TimeInterval? {
+        guard let index = arguments.firstIndex(of: "-KentikIncognitoGrace"), index + 1 < arguments.count else { return nil }
+        return TimeInterval(arguments[index + 1])
+    }
+
+    /// -KentikIncognitoFaceIDOff — «Face ID для инкогнито» выключено (как будто пользователь
+    /// выключил сам).
+    static var incognitoFaceIDOff: Bool { arguments.contains("-KentikIncognitoFaceIDOff") }
+
+    /// -KentikFreshHistory — в UI-тесте с -KentikPersistSession начать с пустой истории
+    /// (дальше она пишется на диск, как у пользователя).
+    static var freshHistory: Bool { arguments.contains("-KentikFreshHistory") }
 
     static var startURL: URL? {
         guard let index = arguments.firstIndex(of: "-KentikStartURL"),
@@ -44,7 +61,11 @@ enum TestHooks {
     static var fakeAuth: Bool { false }
     static var noGuard: Bool { false }
     static var noBlocker: Bool { false }
-    static var webViewAutoresizing: Bool { false }
+    static var webViewAutoLayout: Bool { false }
+    static var noAdGuard: Bool { false }
+    static var incognitoGrace: TimeInterval? { nil }
+    static var incognitoFaceIDOff: Bool { false }
+    static var freshHistory: Bool { false }
     static var startURL: URL? { nil }
 #endif
 

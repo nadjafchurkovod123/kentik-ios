@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kentik SPA</title>
+<!-- Одностраничный сайт: «Дальше» меняет адрес через history.pushState и заголовок без
+     загрузки страницы (так переходит m.youtube.com и многие сайты с сериалами). -->
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 24px 20px; background: #0f0a17; color: #fbfbfe; font: 17px -apple-system, system-ui, sans-serif; }
+  h1 { color: #a78bfa; font-size: 26px; margin: 0 0 16px; }
+  button { font: 600 18px -apple-system, system-ui, sans-serif; color: #fff; background: #4b2a85; border: 0; border-radius: 12px; padding: 14px 22px; }
+</style>
+</head>
+<body>
+  <h1 id="h">Страница 1</h1>
+  <button id="next" type="button">Дальше</button>
+  <script>
+    var n = Number(new URLSearchParams(location.search).get('page') || '1');
+    function show() {
+      document.getElementById('h').textContent = 'Страница ' + n;
+      document.title = n === 1 ? 'Kentik SPA' : 'Kentik SPA · ' + n;
+    }
+    show();
+    document.getElementById('next').addEventListener('click', function () {
+      n += 1;
+      history.pushState({ n: n }, '', '?page=' + n);
+      show();
+    });
+  </script>
+</body>
+</html>

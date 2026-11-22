@@ -49,6 +49,9 @@ enum WebViewFactory {
                 : WKWebsiteDataStore.default()
             configuration.allowsInlineMediaPlayback = true
             configuration.allowsPictureInPictureMediaPlayback = true
+            // Как в Safari: без звука видео может стартовать само (превью, следующая серия
+            // в плеере), со звуком — только после касания.
+            configuration.mediaTypesRequiringUserActionForPlayback = .audio
             // Полноэкранный режим для плееров (Fullscreen API) — нужен сайтам с сериалами.
             configuration.preferences.isElementFullscreenEnabled = true
             configuration.preferences.javaScriptCanOpenWindowsAutomatically = false

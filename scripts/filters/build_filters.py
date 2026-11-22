@@ -64,6 +64,11 @@ def fetch(url: str, attempts: int = 3) -> str:
 
 
 def fetch_source(source_id: str, source: dict) -> tuple[str, str]:
+    # Свой список в репозитории (scripts/filters/<файл>), без сети.
+    if source.get("file"):
+        path = os.path.join(HERE, source["file"])
+        with open(path, encoding="utf-8") as f:
+            return "file://" + path, f.read()
     errors = []
     for url in source["urls"]:
         try:

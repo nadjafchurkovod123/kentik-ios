@@ -48,9 +48,11 @@ final class IncognitoLockUITests: XCTestCase {
         app.buttons["tabsButton"].tap()
         XCTAssertTrue(segment.waitForExistence(timeout: 10), "нет переключателя вкладок")
         segment.buttons.element(boundBy: 1).tap()
-        // Сразу, ещё во время перехода между разделами.
+        // Сразу, ещё во время перехода между разделами (и под запросом Face ID, который вход
+        // в запертый раздел показывает сам).
         attachScreenshot(app, name: "lock-02-incognito-segment-at-once")
         assertIncognitoHidden(app, "«Инкогнито» сразу после переключения")
+        cancelEntryFaceID(app, "вход в «Инкогнито» после фона")
         sleep(1)
         attachScreenshot(app, name: "lock-03-incognito-segment-locked")
         assertSwitcherLocked(app, "«Инкогнито» после возвращения из фона")
@@ -59,9 +61,11 @@ final class IncognitoLockUITests: XCTestCase {
         segment.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.staticTexts["Kentik Hello"].waitForExistence(timeout: 5), "обычные вкладки не видны")
         segment.buttons.element(boundBy: 1).tap()
+        cancelEntryFaceID(app, "«Вкладки» → «Инкогнито»")
         assertSwitcherLocked(app, "«Вкладки» → «Инкогнито»")
         segment.buttons.element(boundBy: 0).tap()
         segment.buttons.element(boundBy: 1).tap()
+        cancelEntryFaceID(app, "второй раз «Вкладки» → «Инкогнито»")
         assertSwitcherLocked(app, "второй раз «Вкладки» → «Инкогнито»")
 
         // «+» в запертом инкогнито сначала спрашивает Face ID; отмена — ничего не открывается.
@@ -120,6 +124,7 @@ final class IncognitoLockUITests: XCTestCase {
         segment.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(app.staticTexts["Kentik Hello"].waitForExistence(timeout: 5), "обычные вкладки не видны")
         segment.buttons.element(boundBy: 1).tap()
+        cancelEntryFaceID(app, "«Вкладки» → «Инкогнито»")
         assertSwitcherLocked(app, "«Вкладки» → «Инкогнито»")
 
         unlock(app)
@@ -312,7 +317,11 @@ final class IncognitoLockUITests: XCTestCase {
         app.launch()
         waitForTitle(app, "Kentik Hello", timeout: 300)
 
+        // С 1.0.2 инкогнито заперто с запуска: вход — через Face ID.
         openMenuItem(app, "Новая вкладка инкогнито")
+        let entry = fakeAuthAlert(app)
+        XCTAssertTrue(entry.waitForExistence(timeout: 8), "вход в инкогнито не спросил Face ID")
+        if entry.exists { entry.buttons["Разрешить"].tap() }
         typeAddress(app, "\(Self.host)/locked.html?n=1")
         waitForTitle(app, "Секрет-1")
         app.buttons["newTabButton"].tap()
@@ -336,6 +345,17 @@ final class IncognitoLockUITests: XCTestCase {
     @MainActor
     private func fakeAuthAlert(_ app: XCUIApplication) -> XCUIElement {
         app.alerts["Face ID (тест)"]
+    }
+
+    /// Вход в запертый раздел «Инкогнито» сам спрашивает Face ID (1.0.2) — отменяем.
+    @MainActor
+    private func cancelEntryFaceID(_ app: XCUIApplication, _ context: String,
+                                   file: StaticString = #filePath, line: UInt = #line) {
+        let alert = fakeAuthAlert(app)
+        XCTAssertTrue(alert.waitForExistence(timeout: 5), "\(context): вход в раздел не спросил Face ID", file: file, line: line)
+        assertIncognitoHidden(app, "\(context): под запросом Face ID", file: file, line: line)
+        if alert.exists { alert.buttons["Отменить"].tap() }
+        sleep(1)
     }
 
     /// «Разблокировать» → тестовый Face ID → «Разрешить»; замок исчезает.

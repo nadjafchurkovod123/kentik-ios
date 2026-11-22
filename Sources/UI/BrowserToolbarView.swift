@@ -80,9 +80,11 @@ final class BrowserToolbarView: UIView {
 
     func setTint(_ color: UIColor, incognito: Bool) {
         [backButton, forwardButton, newTabButton, menuButton].forEach { $0.tintColor = color }
-        tabsFrame.layer.borderColor = (incognito ? Theme.violet : color).cgColor
-        tabsFrame.backgroundColor = incognito ? Theme.violet.withAlphaComponent(0.25) : .clear
-        tabsCount.textColor = incognito ? Theme.violet : color
+        tabsFrame.layer.borderColor = (incognito ? Theme.incognitoTint : color).cgColor
+        tabsFrame.backgroundColor = incognito ? Theme.incognitoGradient[0].withAlphaComponent(0.6) : .clear
+        tabsCount.textColor = incognito ? .white : color
+        tabsButton.accessibilityIdentifier = "tabsButton"
+        tabsButton.accessibilityHint = incognito ? "Инкогнито" : nil
     }
 
     func setTabCount(_ count: Int) {

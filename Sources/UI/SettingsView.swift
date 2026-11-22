@@ -79,6 +79,7 @@ final class SettingsModel: ObservableObject {
         guard on else {
             settings.incognitoFaceID = false
             faceID = false
+            IncognitoLock.shared.reset()
             return
         }
         // Включаем только после успешной проверки — чтобы не запереться.
@@ -214,7 +215,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Инкогнито")
                 } footer: {
-                    Text("Вкладки инкогнито не пишут историю. Куки и кэш живут только в памяти и стираются, когда закрыта последняя вкладка инкогнито.")
+                    Text("Вкладки инкогнито не пишут историю. Куки и кэш живут только в памяти и стираются, когда закрыта последняя вкладка инкогнито. С Face ID вход в инкогнито спрашивает Face ID: после запуска, после ухода в фон и если вы были на обычных вкладках дольше 30 секунд.")
                 }
                 .listRowBackground(rowBackground)
 

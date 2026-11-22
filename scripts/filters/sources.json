@@ -1,7 +1,7 @@
 {
   "_comment": "Источники списков фильтров Kentik. Порядок списков = приоритет. fixes добавляются в КАЖДЫЙ список: исключения WebKit действуют только внутри своего списка.",
   "schema": 1,
-  "fixes": ["ublock-unbreak", "ublock-quick-fixes"],
+  "fixes": ["ublock-unbreak", "ublock-quick-fixes", "kentik-fixes"],
   "sources": {
     "easylist": {
       "title": "EasyList",
@@ -71,6 +71,10 @@
       "title": "uBlock filters – Unbreak",
       "urls": ["https://ublockorigin.github.io/uAssets/filters/unbreak.min.txt",
                "https://ublockorigin.pages.dev/filters/unbreak.min.txt"]
+    },
+    "kentik-fixes": {
+      "title": "Kentik — исправления (ad_status.js для YouTube)",
+      "file": "kentik-fixes.txt"
     },
     "ublock-quick-fixes": {
       "title": "uBlock filters – Quick fixes",
