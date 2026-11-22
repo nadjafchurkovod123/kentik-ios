@@ -148,8 +148,10 @@ final class BrowserViewController: UIViewController {
     }
 
     /// Вернулись из фона: если инкогнито заперто и на экране — спросить Face ID.
-    func unlockIfNeeded() {
+    /// retry — повторная попытка: только если запрос за последние секунды так и не показался.
+    func unlockIfNeeded(retry: Bool = false) {
         guard IncognitoLock.shared.isLocked, isShowingIncognitoContent, !IncognitoLock.shared.isAuthenticating else { return }
+        if retry, let last = IncognitoLock.shared.lastPromptAt, Date().timeIntervalSince(last) < 3 { return }
         IncognitoLock.shared.unlock { _ in }
     }
 

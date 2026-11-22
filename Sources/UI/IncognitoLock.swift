@@ -32,6 +32,8 @@ final class IncognitoLock {
     /// Когда пользователь ушёл из (открытого) инкогнито на обычные вкладки; nil — он в инкогнито
     /// или инкогнито заперто.
     private(set) var leftAt: Date?
+    /// Когда последний раз показали запрос Face ID.
+    private(set) var lastPromptAt: Date?
 
     private let enabledProvider: @MainActor () -> Bool
 
@@ -133,6 +135,7 @@ final class IncognitoLock {
             return
         }
         shared.isAuthenticating = true
+        shared.lastPromptAt = Date()
         context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { ok, _ in
             Task { @MainActor in
                 IncognitoLock.shared.isAuthenticating = false
@@ -144,9 +147,11 @@ final class IncognitoLock {
     /// Только для UI-тестов (-KentikFakeAuth): запрос «Разрешить / Отменить» вместо Face ID,
     /// поверх всего, что сейчас на экране, — как настоящий запрос Face ID.
     private static func fakeAuthenticate(reason: String, completion: @escaping @MainActor (Bool) -> Void) {
-        let window = UIApplication.shared.connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
-            .first
+        // Окно браузера, а не ключевое: пока WebKit закрывает «картинку в картинке» или полноэкранный
+        // режим, ключевым может быть его служебное окно (или никакое).
+        let windows = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows)
+        let window = windows.first { $0.rootViewController is BrowserViewController }
+            ?? windows.first { $0.isKeyWindow }
         guard var top = window?.rootViewController else {
             completion(false)
             return
@@ -155,6 +160,7 @@ final class IncognitoLock {
             top = presented
         }
         shared.isAuthenticating = true
+        shared.lastPromptAt = Date()
         let finish: @MainActor (Bool) -> Void = { ok in
             IncognitoLock.shared.isAuthenticating = false
             completion(ok)

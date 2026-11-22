@@ -86,7 +86,7 @@ final class SeriesDiagUITests: XCTestCase {
     /// Зеркало Киного с теми же балансерами (Alloha, HDVB/Collaps во фрейме).
     @MainActor
     func testLiveKinogoGG() {
-        for mode in [Mode.on, .autoLayout] {
+        for mode in [Mode.on, .off] {
             liveSeries(site: "kinogo-gg", start: "https://kinogo.gg/4816-mentalistka-1-sezon.html", query: nil, mode: mode)
         }
     }
@@ -105,7 +105,7 @@ final class SeriesDiagUITests: XCTestCase {
 
     @MainActor
     func testLiveYouTube() {
-        for (video, mode) in [("dQw4w9WgXcQ", Mode.noAdGuard), ("dQw4w9WgXcQ", .on), ("kJQP7kiw5Fk", .on), ("9bZkp7q19f0", .on)] {
+        for (video, mode) in [("dQw4w9WgXcQ", Mode.noAdGuard), ("dQw4w9WgXcQ", .on), ("kJQP7kiw5Fk", .noAdGuard), ("kJQP7kiw5Fk", .on)] {
             let name = "youtube-\(video)-\(mode.rawValue)"
             let diag = Diag(name)
             let app = XCUIApplication()
@@ -146,7 +146,9 @@ final class SeriesDiagUITests: XCTestCase {
       var live = null; try { live = p && p.getPlayerResponse ? p.getPlayerResponse() : null; } catch (e) {}
       var v = document.querySelector('video');
       var adUI = !!document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay, .ytp-ad-module *, ytm-promoted-sparkles-web-renderer, .ytm-promoted-video-renderer, ad-badge-view-model');
-      return JSON.stringify({ initial: keys(r), live: keys(live), adUI: adUI, gas: window.google_ad_status === 1,
+      // Скриптлет json-prune AdGuard стоит в странице: ответ плеера теряет рекламные поля.
+      var pruned = keys((JSON.parse('{"playerResponse":{"adPlacements":[1],"playerAds":[1],"adSlots":[1],"videoDetails":{}}}') || {}).playerResponse);
+      return JSON.stringify({ initial: keys(r), live: keys(live), adUI: adUI, gas: window.google_ad_status === 1, prunedLeft: pruned,
         playing: !!(v && !v.paused && v.currentTime > 0), t: v ? Math.round(v.currentTime) : -1,
         duration: v ? Math.round(v.duration || 0) : -1, title: document.title.slice(0, 60) });
     })()
@@ -192,6 +194,13 @@ final class SeriesDiagUITests: XCTestCase {
         attachScreen("\(name)-3-series")
         diag.snapshotState("3-series")
 
+        // Вкладки плееров («Плеер 1», «Alloha»…): первая — касанием, как пальцем.
+        let tab = diag.evalString(Self.findPlayerTabJS)
+        if let point = screenPoint(app, tab) {
+            app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: point.x, dy: point.y)).tap()
+            sleep(6)
+            attachScreen("\(name)-4-player-tab")
+        }
         // Плеер — в середину экрана; касание по центру, как пальцем (ленивые iframe грузятся по касанию).
         for attempt in 1...3 where !diag.isVideoPlaying() {
             let player = diag.evalString(Self.findPlayerJS)
@@ -245,6 +254,18 @@ final class SeriesDiagUITests: XCTestCase {
         XCTContext.runActivity(named: "\(name): \(summary)") { _ in }
         app.terminate()
     }
+
+    /// Первая видимая вкладка переключателя плееров (если есть).
+    static let findPlayerTabJS = """
+    (function(){
+      var c=[].slice.call(document.querySelectorAll('.tabs li, .js-player-tabs li, .player-tabs li, [data-tab], .tabs__item, .tabs-b li'))
+        .filter(function(el){var r=el.getBoundingClientRect(); return r.width>20&&r.height>15&&getComputedStyle(el).visibility!=='hidden';});
+      if(!c.length) return '';
+      var el=c[0]; el.scrollIntoView({block:'center'});
+      var r=el.getBoundingClientRect();
+      return JSON.stringify({tag:el.tagName,text:(el.textContent||'').trim().slice(0,40),x:r.left+r.width/2,y:r.top+r.height/2,vw:innerWidth});
+    })()
+    """
 
     /// Самый крупный плеер на странице (iframe/video или блок «player»): прокрутить в середину
     /// и вернуть его центр в CSS-пикселях.

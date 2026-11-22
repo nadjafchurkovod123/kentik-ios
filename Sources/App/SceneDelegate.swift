@@ -57,6 +57,11 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         if wasInBackground {
             wasInBackground = false
             browser?.unlockIfNeeded()
+            // Ещё раз чуть позже: если в первый миг (WebKit закрывает «картинку в картинке» или
+            // полноэкранный режим) запрос не показался. Пока идёт проверка, повтор ничего не делает.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                self?.browser?.unlockIfNeeded(retry: true)
+            }
         }
     }
 
